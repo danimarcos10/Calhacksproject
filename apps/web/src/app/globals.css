@@ -350,7 +350,7 @@ h4 { margin: 8px 0 4px; font-size: var(--fs-body); font-weight: 500; }
   align-content: center;
   gap: 8px;
   min-height: 460px;
-  padding: 24px;
+  padding: 160px 24px 24px;
   color: #ffffff;
   cursor: pointer;
   text-align: center;
