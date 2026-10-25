@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS target_revisions (
   team_color_note TEXT NOT NULL,
   identity_uncertain INTEGER NOT NULL,
   role TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   UNIQUE(video_id, revision)
 );
@@ -115,7 +116,13 @@ CREATE TABLE IF NOT EXISTS observations (
   limitations_json TEXT NOT NULL,
   review_status TEXT NOT NULL,
   attribution_hold INTEGER NOT NULL,
+  detail_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS attached_manifests (
+  manifest_id TEXT PRIMARY KEY,
+  submission_key TEXT NOT NULL,
+  attached_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS budget_entries (
   id TEXT PRIMARY KEY,
@@ -142,6 +149,13 @@ class Database:
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.execute("PRAGMA busy_timeout=5000")
             self._conn.executescript(SCHEMA)
+            self._ensure_column("target_revisions", "note", "note TEXT NOT NULL DEFAULT ''")
+            self._ensure_column("observations", "detail_json", "detail_json TEXT NOT NULL DEFAULT '{}'")
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        if column not in {row[1] for row in rows}:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
 
     def close(self) -> None:
         with self._lock:
@@ -252,8 +266,8 @@ class Database:
             """
             INSERT INTO target_revisions (
               id, video_id, manifest_id, revision, anchors_json, jersey_note,
-              team_color_note, identity_uncertain, role, created_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)
+              team_color_note, identity_uncertain, role, note, created_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 row["id"],
@@ -265,6 +279,7 @@ class Database:
                 row["team_color_note"],
                 1 if row["identity_uncertain"] else 0,
                 row["role"],
+                row.get("note") or "",
                 row["created_at"],
             ),
         )
@@ -285,6 +300,70 @@ class Database:
             row["anchors"] = json.loads(row["anchors_json"])
             row["identity_uncertain"] = bool(row["identity_uncertain"])
         return row
+
+    def latest_revision_for_manifest(self, manifest_id: str) -> dict[str, Any] | None:
+        row = self.query_one(
+            "SELECT * FROM target_revisions WHERE manifest_id=? ORDER BY revision DESC LIMIT 1",
+            (manifest_id,),
+        )
+        if row:
+            row["anchors"] = json.loads(row["anchors_json"])
+            row["identity_uncertain"] = bool(row["identity_uncertain"])
+        return row
+
+    def attach_manifest(self, manifest_id: str, submission_key: str) -> None:
+        self.execute(
+            "INSERT OR IGNORE INTO attached_manifests (manifest_id, submission_key, attached_at) VALUES (?,?,?)",
+            (manifest_id, submission_key, utcnow()),
+        )
+
+    def attachment(self, manifest_id: str) -> dict[str, Any] | None:
+        return self.query_one("SELECT * FROM attached_manifests WHERE manifest_id=?", (manifest_id,))
+
+    def active_job_for_fingerprint(self, digest: str) -> dict[str, Any] | None:
+        row = self.query_one(
+            "SELECT id FROM jobs WHERE fingerprint=? AND status IN ('queued','running') ORDER BY created_at LIMIT 1",
+            (digest,),
+        )
+        return self.get_job(row["id"]) if row else None
+
+    def manifest_spend(self, manifest_id: str) -> dict[str, Any]:
+        jobs = self.query(
+            """
+            SELECT j.id, j.status, j.cache_status, r.provider_label
+            FROM jobs j LEFT JOIN analysis_runs r ON r.id = j.result_run_id
+            WHERE j.manifest_id=?
+            """,
+            (manifest_id,),
+        )
+        reconciled = 0.0
+        live_calls = 0
+        synthetic_calls = 0
+        unknown = 0
+        failed = 0
+        cached = 0
+        for job in jobs:
+            if job["status"] == "failed":
+                failed += 1
+            if job["cache_status"] == "cached":
+                cached += 1
+            for entry in self.query("SELECT kind, amount_usd, input_tokens FROM budget_entries WHERE job_id=?", (job["id"],)):
+                if entry["kind"] == "reconcile":
+                    if job["provider_label"] == "synthetic":
+                        synthetic_calls += 1
+                    else:
+                        live_calls += 1
+                        reconciled += float(entry["amount_usd"])
+                elif entry["kind"] == "release" and entry["input_tokens"] is None:
+                    unknown += 1
+        return {
+            "reconciled_usd": round(reconciled, 6),
+            "live_calls": live_calls,
+            "synthetic_calls": synthetic_calls,
+            "unknown_usage_attempts": unknown,
+            "failed_jobs": failed,
+            "cached_reuses": cached,
+        }
 
     def revisions_for_video(self, video_id: str) -> list[dict[str, Any]]:
         rows = self.query(
@@ -471,8 +550,8 @@ class Database:
             INSERT INTO observations (
               id, run_id, category, start_ms, end_ms, frame_ids_json, visible_action,
               outcome, evidence_status, identity_status, limitations_json, review_status,
-              attribution_hold, created_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+              attribution_hold, detail_json, created_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 row["id"],
@@ -488,6 +567,14 @@ class Database:
                 json.dumps(row["limitations"]),
                 row["review_status"],
                 1 if row["attribution_hold"] else 0,
+                json.dumps(
+                    {
+                        "seek_ms": row.get("seek_ms", row["start_ms"]),
+                        "continuity_issues": row.get("continuity_issues") or [],
+                        "hold_reason": row.get("hold_reason") or "",
+                        "hold_frame_id": row.get("hold_frame_id"),
+                    }
+                ),
                 row["created_at"],
             ),
         )
@@ -508,6 +595,11 @@ class Database:
             row["frame_ids"] = json.loads(row["frame_ids_json"])
             row["limitations"] = json.loads(row["limitations_json"])
             row["attribution_hold"] = bool(row["attribution_hold"])
+            detail = json.loads(row.get("detail_json") or "{}")
+            row["seek_ms"] = int(detail.get("seek_ms", row["start_ms"]))
+            row["continuity_issues"] = detail.get("continuity_issues") or []
+            row["hold_reason"] = detail.get("hold_reason") or ""
+            row["hold_frame_id"] = detail.get("hold_frame_id")
         return rows
 
     def save_succeeded_analysis(self, run: dict[str, Any], observations: list[dict[str, Any]], job_id: str) -> None:

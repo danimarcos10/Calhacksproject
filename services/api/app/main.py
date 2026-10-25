@@ -15,6 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from app.anchors import present_anchor, review_reasons
 from app.config import Settings
 from app.db import Database, new_id, utcnow
 from app.schemas import (
@@ -25,6 +26,8 @@ from app.schemas import (
     ManifestOut,
     ReadyOut,
     RevisionOut,
+    ProposalOut,
+    ProposalRequest,
     SampleRequest,
     TargetRequest,
     VideoOut,
@@ -34,7 +37,9 @@ from app.media import format_duration_ms, make_playback, probe_video, sample_win
 from app.providers.anthropic import AnthropicProvider
 from app.providers.synthetic import SyntheticProvider
 from app.versions import SAMPLER_VERSION
-from app.worker import fingerprint, worker_loop
+from app.convex_bridge import bridge_loop
+from app.jobs import enqueue_analysis
+from app.worker import worker_loop
 
 log = logging.getLogger("secondlook")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -71,9 +76,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         stop = threading.Event()
         thread = threading.Thread(target=worker_loop, args=(app, stop), name="secondlook-worker", daemon=True)
         thread.start()
+        bridge = None
+        if settings.convex_url.strip() and settings.convex_worker_secret.strip():
+            bridge = threading.Thread(target=bridge_loop, args=(app, stop), name="secondlook-convex", daemon=True)
+            bridge.start()
         yield
         stop.set()
         thread.join(timeout=2)
+        if bridge:
+            bridge.join(timeout=2)
         app.state.db.close()
 
     app = FastAPI(title="SecondLook", version="0.1.0", lifespan=lifespan)
@@ -288,13 +299,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         manifest = db.get_manifest(parsed.manifest_id)
         if manifest is None or manifest["video_id"] != video_id:
             raise AppError("unknown_manifest", "Sample a window on this clip before marking the target.", 400)
+        if db.attachment(manifest["id"]):
+            raise AppError(
+                "window_in_submission",
+                "This window belongs to a submission. Edit the player selection from the submission's Prepare page.",
+                409,
+            )
         known = {frame["frame_id"] for frame in manifest["frames"]}
         anchors = [anchor.model_dump() for anchor in parsed.anchors]
         if any(anchor["frame_id"] not in known for anchor in anchors):
             raise AppError("unknown_frame", "An anchor refers to a frame that is not in this window.", 400)
         if len({anchor["frame_id"] for anchor in anchors}) != len(anchors):
             raise AppError("duplicate_anchor", "Each frame can have only one anchor.", 400)
-        if not any(anchor["state"] == "box" for anchor in anchors):
+        if not any(anchor["state"] == "located" for anchor in anchors):
             raise AppError("anchor_required", "Mark the target on at least one frame, or choose another window.", 400)
         revision_id = new_id("rev")
         try:
@@ -309,14 +326,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "anchors": anchors,
                         "jersey_note": parsed.jersey_note.strip(),
                         "team_color_note": parsed.team_color_note.strip(),
-                        "identity_uncertain": parsed.identity_uncertain,
-                        "role": parsed.role.strip() or "fullback",
+                        "identity_uncertain": False,
+                        "role": parsed.role.strip(),
+                        "note": parsed.note.strip(),
                         "created_at": utcnow(),
                     }
                 )
         except sqlite3.IntegrityError as exc:
             raise AppError("revision_conflict", "The target was saved by another request. Load it again.", 409, True) from exc
         return _revision_payload(db.get_revision(revision_id))
+
+    @app.post("/api/videos/{video_id}/proposals", response_model=ProposalOut)
+    def proposals(video_id: str, parsed: ProposalRequest, request: Request):
+        _require_id(video_id, "vid")
+        db: Database = request.app.state.db
+        video = db.get_video(video_id)
+        if video is None:
+            raise AppError("not_found", "That clip was not found.", 404)
+        manifest = db.get_manifest(parsed.manifest_id)
+        if manifest is None or manifest["video_id"] != video_id:
+            raise AppError("unknown_manifest", "Sample a window on this clip before proposing locations.", 400)
+        try:
+            from app.propagate import decode_window, proposals_for_frames
+        except ImportError as exc:
+            raise AppError("tracker_unavailable", "Location proposals are not available on this machine.", 503) from exc
+        work = settings.data_path / "proposals" / video_id
+        try:
+            frames, times = decode_window(
+                _under(settings.data_path, video["original_path"]),
+                manifest["start_ms"],
+                manifest["end_ms"],
+                work,
+            )
+            proposed = proposals_for_frames(
+                frames,
+                times,
+                [{"frame_id": frame["frame_id"], "source_t_ms": frame["source_t_ms"]} for frame in manifest["frames"]],
+                [anchor.model_dump() for anchor in parsed.anchors],
+            )
+        except (RuntimeError, ImportError, OSError) as exc:
+            raise AppError("tracker_failed", "Locations could not be proposed for this window. Mark the frames manually.", 500, True) from exc
+        return {"anchors": proposed}
 
     @app.post("/api/analyses", response_model=JobOut)
     def analyses(parsed: AnalysisRequest, request: Request):
@@ -346,46 +396,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise AppError("not_found", "That target does not belong to this clip.", 404)
         if revision["manifest_id"] != manifest["id"]:
             raise AppError("stale_window", "The target was marked on a different window. Mark it again.", 400)
-        model_name = "synthetic-fixture" if mode == "synthetic" else settings.anthropic_model
-        digest = fingerprint(
-            video_sha256=video["sha256"],
-            start_ms=manifest["start_ms"],
-            end_ms=manifest["end_ms"],
-            revision_id=revision["id"],
-            model=model_name,
-        )
-        cached = db.find_succeeded_run(digest)
-        now = utcnow()
-        job_id = new_id("job")
-        row = {
-            "id": job_id,
-            "video_id": video["id"],
-            "manifest_id": manifest["id"],
-            "target_revision_id": revision["id"],
-            "status": "succeeded" if cached else "queued",
-            "stage": "succeeded" if cached else "queued",
-            "attempts": 0,
-            "error_code": None,
-            "error_message": None,
-            "error_retryable": None,
-            "result_run_id": cached["id"] if cached else None,
-            "idempotency_key": key or None,
-            "fingerprint": digest,
-            "cache_status": "cached" if cached else "live",
-            "stage_log": [{"stage": "succeeded" if cached else "queued", "at": now}],
-            "created_at": now,
-            "started_at": now if cached else None,
-            "finished_at": now if cached else None,
-        }
-        try:
-            db.insert_job(row)
-        except sqlite3.IntegrityError:
-            if key:
-                existing = db.job_by_idempotency(key)
-                if existing:
-                    return _job_payload(db, existing)
-            raise
-        return _job_payload(db, db.get_job(job_id))
+        if db.attachment(manifest["id"]):
+            raise AppError(
+                "window_in_submission",
+                "This window belongs to a submission. Queue it from the submission's review page.",
+                409,
+            )
+        return _job_payload(db, enqueue_analysis(db, settings, video, manifest, revision, key))
 
     @app.get("/api/jobs/{job_id}", response_model=JobOut)
     def job(job_id: str, request: Request):
@@ -611,11 +628,13 @@ def _revision_payload(row: dict | None) -> dict | None:
         "video_id": row["video_id"],
         "manifest_id": row["manifest_id"],
         "revision": row["revision"],
-        "anchors": row["anchors"],
+        "anchors": [present_anchor(anchor) for anchor in row["anchors"]],
         "jersey_note": row["jersey_note"],
         "team_color_note": row["team_color_note"],
         "identity_uncertain": row["identity_uncertain"],
-        "role": row["role"],
+        "role": row["role"] or "",
+        "note": row.get("note") or "",
+        "needs_review": review_reasons(row["anchors"], bool(row["identity_uncertain"])),
         "created_at": row["created_at"],
     }
 
@@ -675,8 +694,12 @@ def _analysis_payload(db: Database, run_id: str, cache_status: str | None) -> di
                 "evidence_status": item["evidence_status"],
                 "identity_status": item["identity_status"],
                 "limitations": item["limitations"],
+                "continuity_issues": item.get("continuity_issues") or [],
+                "seek_ms": item.get("seek_ms", item["start_ms"]),
                 "review_status": item["review_status"],
                 "attribution_hold": item["attribution_hold"],
+                "hold_reason": item.get("hold_reason") or "",
+                "hold_frame_id": item.get("hold_frame_id"),
             }
             for item in db.observations_for_run(run_id)
         ],

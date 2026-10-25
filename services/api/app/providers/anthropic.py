@@ -1,6 +1,9 @@
+import json
 import logging
+from pathlib import Path
 
 import anthropic
+from pydantic import ValidationError
 
 from app.providers.base import EvidenceProvider, ProviderCallResult, ProviderError
 from app.schemas import ProviderEvidence
@@ -55,6 +58,24 @@ class AnthropicProvider(EvidenceProvider):
                 messages=messages,
                 output_format=ProviderEvidence,
             )
+        except ValidationError as exc:
+            brief = []
+            for item in exc.errors()[:4]:
+                entry = {"loc": list(item.get("loc", ())), "type": item.get("type"), "msg": item.get("msg")}
+                raw = item.get("input")
+                if isinstance(raw, str):
+                    entry["input_head"] = raw[:500]
+                    entry["input_tail"] = raw[-300:]
+                brief.append(entry)
+            log.warning("evidence schema mismatch %s", brief)
+            Path("data").mkdir(exist_ok=True)
+            Path("data/last_schema_error.json").write_text(json.dumps(brief), encoding="utf-8")
+            raise ProviderError(
+                "malformed_output",
+                "The model response did not match the evidence schema.",
+                retryable=False,
+                billed=True,
+            ) from None
         except Exception as exc:
             raise self._translate(exc) from None
         usage = _usage(response.usage)
@@ -139,6 +160,7 @@ class AnthropicProvider(EvidenceProvider):
                 billed=True,
             )
         if isinstance(exc, anthropic.BadRequestError):
+            log.warning("provider rejected the request: %s", str(exc)[:400])
             return ProviderError(
                 "provider_bad_request",
                 "The model rejected the request. Confirm the configured model accepts images and structured output.",

@@ -4,9 +4,10 @@
 | Component | Responsibility | First implementation |
 | --- | --- | --- |
 | Next.js web | Upload, selection, video playback, review, profile | React + TypeScript; native video and canvas |
-| FastAPI API | Validate requests, persist state, serve media, enqueue work | Pydantic models; explicit routes |
-| Single worker | FFmpeg jobs and model calls outside request handling | One process reading SQLite jobs |
-| SQLite | Submission, revisions, observations, review history, usage | WAL mode; short transactions; local disk |
+| Convex (from M1) | Shared review state: players, submissions, windows, selections, analysis queue, runs, observations, decisions, notes, footage requests | Live queries and transactional mutations in `apps/web/convex`; review code per submission; worker functions gated by `WORKER_SECRET` |
+| FastAPI API | Validate requests, serve media and frames, tracker proposals, enqueue work | Pydantic models; explicit routes |
+| Single worker | FFmpeg jobs and model calls outside request handling | One thread reading SQLite jobs; a bridge thread claims Convex requests and publishes results |
+| SQLite | Media, manifests, frames, execution jobs, budget ledger, result cache, worker copies of selections | WAL mode; short transactions; local disk |
 | Local object store | Original videos, derivatives, manifests, responses | Generated IDs under DATA_DIR |
 | Vision provider | Produce candidate visual observations | Anthropic adapter; configurable model |
 | Tracking adapter | Produce proposed target masks/boxes | Manual by default; SAM 2.1 if spike passes |
@@ -14,6 +15,8 @@
 The browser submits work to the API. The API commits a job and returns its ID. The worker reads only committed jobs, writes a versioned result, and updates status. The browser polls. Media URLs are served by the API with seeking support, not loaded from a worker's filesystem path.
 
 For the first 90 minutes, a bounded in-process task can be acceptable if marked as temporary and interruption is visible. By M1, use a separate worker process and persistent job records. Do not use an untracked fire-and-forget coroutine as the final queue.
+
+M1 boundary, as built: the coach review reads and writes only Convex. The Python bridge (`services/api/app/convex_bridge.py`) polls `worker:claimNext` with the worker secret. For each claim it makes or reuses an immutable SQLite copy of the selection, keyed by the same `rev_` key, runs the existing job with idempotency key `cvx:{request}:{attempt}`, sends stage changes with `worker:progress`, and finishes with `worker:publishResult` or `worker:failRequest`. A retried or expired claim reuses the job, or the result cache keyed by input fingerprint, so it does not pay Claude again. Convex decides whether a result is current: a result for an old selection is stored as outdated and never shown as current.
 
 ## Why this stack
 Python keeps video handling and model validation together; TypeScript gives a responsive reviewer interface. SQLite avoids cloud-account setup while retaining real persistence. FFmpeg gives explicit media transformations. Claude is both a multimodal component and the strongest directly relevant sponsor-credit fit. The difficult engineering remains visible without a large infrastructure footprint.

@@ -5,8 +5,21 @@ A user uploads a clip, sees its duration, chooses a 6-8 second window, marks the
 
 M0 is done only after one real clip reaches a real provider and a returned observation survives schema and provenance checks. A mock response is useful for UI development, but is not the completed AI milestone. If no key or footage is available, report that precise blocker and leave the working upload/selection path available.
 
+## M0.5: a useful player-specific observation
+
+One selected player, a few manual boxes, and one observation a person can check against the frames. Untouched frames stay unannotated. A name is not required. Continuity is per frame. This supersedes the default fullback role, the clip-wide identity-uncertain flag, the M0 instruction to mark first/middle/last, and starting M1 immediately after M0. M1 has not started.
+
 ## M1: a credible reviewer, by hours 4-6
 Persist submissions and jobs. Show sampled-frame identity markers. Add approve, reject, and correct-player actions. A correction makes dependent observations stale. Re-analysis creates a new revision. Persist the report so refresh and server restart do not erase it. Have three examples ready: clear action, ambiguous action, and wrong-player correction.
+
+As built (2026-10-25): Convex holds the review, and a separate coach view sits beside the Prepare page. Browser-verified:
+- Watch moments plays the merged, padded intervals.
+- Accept updates the playlist and summary.
+- Decisions survive a refresh and a restart of both the API and Convex.
+- A reject made in one session appears in the other without a refresh, and so does a footage request.
+- The correction demonstration works. Hand boxes were added on f02 and f03, plus tracker estimates. Saving made the accepted moment stale in both sessions. One re-analysis returned two new suggestions, and the stale one did not return.
+
+Each clip supports one attributable window, not three. The wrong-player example became a constructed correction; it is labelled as such.
 
 ## M2: the ambitious complete product, by hours 8-9
 Two or three clips roll up into a profile with distinct matches, reviewed windows, accepted observations, disputed claims, and gaps. A coach inbox and comparison view reveal evidence coverage without a hidden ranking. “Request more footage” creates a local task stating the missing category and why. All core screens work on a real dataset, and one correction visibly changes the rollup.
@@ -86,7 +99,7 @@ Create apps/web and services/api, an environment example, ignored local data dir
 POST a local MP4 or MOV as multipart data. Stream it to a generated internal ID, cap size and duration, and inspect it with ffprobe. Return an ID, duration, dimensions, rotation, and a playable media URL. Extract a representative frame and then a bounded window. Save frame timestamps in a manifest. A malformed video yields a friendly error, not an unhandled exception.
 
 ## Ticket C: pick the player, 15 minutes
-Show video, interval controls, and a canvas over a sampled frame. Save a normalized rectangle and timestamp. Allow first/middle/last anchors and an optional jersey or team-color note. Put the marker in the correct place after resizing. Mark identity uncertainty explicitly. Keep controls plain; the player and evidence should dominate the screen.
+Show video, interval controls, and a canvas over a sampled frame. Save a normalized rectangle and timestamp. M0 asked for first/middle/last anchors and an explicit identity-uncertain flag. M0.5 supersedes that: a frame stays unannotated until the user marks it located, not visible, or uncertain, and a name is not required. Keep controls plain; the player and evidence should dominate the screen.
 
 ## Ticket D: one real model call, 20 minutes
 Send the window's ordered frames and identity information through the Anthropic adapter. Include source timestamps. Use a small Pydantic output schema and the current SDK's structured-output support. Validate every returned frame ID and time range against the actual manifest. Allow zero observations. Store the model ID, prompt version, token usage and response status.

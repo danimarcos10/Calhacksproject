@@ -1,0 +1,23 @@
+{
+  "submissions": [
+    {
+      "slug": "stadium",
+      "title": "Stadium clip, blue kit, two windows",
+      "player": { "key": "player-stadium-blue", "name": "Stadium player (blue kit, starts right edge)" },
+      "rights": "User-supplied, source unconfirmed (filename matches Pexels 15449351). Keep local.",
+      "link": "Uploader asserts the boxed player in this window is the stadium submission's player. Kit colour alone does not identify him.",
+      "windows": [
+        { "video": "vid_c4a22427e7144ee2", "manifest": "man_7c59d754091f4b13" },
+        { "video": "vid_c4a22427e7144ee2", "start_ms": 7000, "end_ms": 14000 }
+      ]
+    },
+    {
+      "slug": "versailles",
+      "title": "Versailles clip, first 8 seconds",
+      "player": { "key": "player-versailles", "name": "Versailles player" },
+      "rights": "CC BY-SA 4.0, Manchesterunited1234. Local demo only, not for publishing.",
+      "link": "Uploader asserts the boxed player in this window is the Versailles submission's player. This is a different person from the stadium player, even though both wear blue.",
+      "windows": [{ "video": "vid_9f25d5e3c9e74b41", "manifest": "man_52e0f80e1f2c4a7d" }]
+    }
+  ]
+}

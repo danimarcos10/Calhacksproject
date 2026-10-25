@@ -46,6 +46,26 @@ People-First Social Impact, Technical Complexity and overall awards are plausibl
 ## Submission evidence structure
 For each chosen track, write: requirement; implemented feature; file/API/run proving it; demo moment; remaining limitation. If a requirement is not actually met, drop the track. This plan does not guarantee eligibility, judging preference or a prize.
 
+## Convex: Best Use (implemented)
+Requirement as read on Devpost (02:50 UTC): "Use real Convex features like live queries and components to win."
+
+**Demonstrated on 2026-10-25** (browser and `scripts/check_convex.py`, local deployment):
+- **Schema:** 10 tables, with indexes for windows by submission, runs by window, selection and key, and decisions by observation (`apps/web/convex/schema.ts`).
+- **Live queries:** `review.get` and `review.inbox` through `useQuery`. With two tabs on one submission:
+  - A reject with a reason in one tab moved the moment to History in the other, without a refresh.
+  - A footage request saved in one appeared in the other and persisted after reload.
+  - A correction saved on the Prepare page made the accepted moment stale in the open review tab.
+  - The queue status, cost and new suggestions appeared as the worker published.
+- **Mutations:** `review.ts` refuses decisions on stale moments, saves on top of a newer selection, estimates relabelled as manual, and duplicate queue entries.
+- **Worker functions:** `worker.ts`, gated by the `WORKER_SECRET` environment variable. The Python worker calls them with the official `convex` client.
+- **Durability:** decisions survived a refresh and a restart of the API and the Convex backend.
+
+**Not used:** Convex Auth, and the Workflow and other components. Workflow was assessed and deferred, with the reason in `docs/DECISIONS.md`. The demo used a local deployment; a cloud dev deployment needs `npx convex login`.
+
+**Unverified:** eligibility, the prize amount (two sources conflict), and how a solo entry is treated when the listing says "Team required: 2 to 4 members".
+
+Devpost paragraph: *SecondLook keeps the coach review in Convex. Model observations are immutable records. Coaches' accept, reject and correction decisions are append-only and tied to the exact player selection they judged. When a coach corrects the player, a single mutation moves the window to a new selection. Every open review session sees the old evidence go stale and leave the playlist and summary at once. The local Python worker claims analysis jobs from a Convex queue with a lease, runs the video and Claude pipeline, and publishes results idempotently, so a retry never pays twice.*
+
 ---
 
 # Optional sponsor tracks: adoption has a price
@@ -56,7 +76,7 @@ For each chosen track, write: requirement; implemented feature; file/API/run pro
 | Elastic: Agent Builder on Serverless | An actual Serverless Agent Builder tool/agent retrieving current evidence with citations | Quest 3S first, Bose QuietComfort second. Useful optional evidence search; not P0. |
 | Apify: Best Use / Best Actor | A working public-data Actor or meaningful Actor integration | $2,000/$1,000/$800/$400/$400; separate $400 Actor award. Opportunity discovery is a separate feature: defer. |
 | Bright Data: public web data app | Live public data essential to core; resilient real demo | Credits + Amazon cards. Poor fit for a private video reviewer; do not bolt on scraping. |
-| Convex: Best Use | Meaningful reactive backend | EP-133 K.O. II + ESP32-S3 display board. Choose upfront only if familiar; do not migrate late. |
+| Convex: Best Use | Meaningful reactive backend | Snapshot said EP-133 K.O. II + ESP32-S3 display board; the Devpost listing read 2026-10-25 says "$5,000 cash to the winning team". Unresolved; confirm with organizers. Adopted as a priority on 2026-10-25; see "Convex: Best Use (implemented)" below. |
 | SpacetimeDB: Best Use | Meaningful live shared state / sync | $2,048/$1,024/$512 cash. Multi-reviewer sync is optional, not needed for this demo. |
 | Mana: Best Hack Built with Mana | Honest meaningful use, accessible build pages/chats and stage evidence | Sponsor advertises $5,000. Keep Cursor as requested; do not change builder solely for this prize. |
 

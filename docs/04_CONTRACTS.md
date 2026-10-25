@@ -26,6 +26,24 @@ Changing player anchors creates a new TargetRevision, never an in-place historic
 
 Review actions are append-only for this prototype. The latest applicable action determines current status, while the original model output remains inspectable. If a coach edits the text, store that as an attributed human note or edited revision; do not present it as the original model's output.
 
+## Field ownership from M1
+Each mutable field has one owner. Nothing below is copied into a second writable store.
+
+| Data | Owner | Rule |
+| --- | --- | --- |
+| Player, submission, review code digest, rights note | Convex `players`, `submissions` | Created by the worker secret; read only with the submission's review code |
+| Window, its frames, player link statement, current selection number | Convex `windows` | `currentRevision` moves forward only through `saveRevision` |
+| Player selection (anchors, notes, origin, proposals offered and kept) | Convex `revisions`, append-only | Saving on top of an older number is refused; estimated boxes stay estimated unless confirmed |
+| Analysis request (queued, running, succeeded, failed, outdated; stage, attempt, lease) | Convex `analysisRequests` | One open request per window and selection |
+| Run and observations | Convex `runs`, `observations`, written only by the worker | Immutable; published once per window, selection and run key |
+| Decisions | Convex `decisions`, append-only | Tied to observation and selection number; refused on stale or held moments |
+| Coach note, next-footage request | Convex `notes`, `footageRequests`, append-only | Newest wins; history kept |
+| Video, manifest, frames, sampled media | SQLite and `DATA_DIR` | API only |
+| Execution job, budget ledger, result cache | SQLite | Worker only; budget rows are reserve, reconcile or release |
+| Worker copy of a selection | SQLite `target_revisions` | Immutable, keyed by the Convex `rev_` key; not edited by any UI |
+
+Moment status is derived, not stored. It is stale when its run is not the current one for the window's selection, held under an identity hold, and otherwise follows the newest decision. A reset counts as an AI suggestion.
+
 ## Match identity and duplication
 A declared match ID is user-supplied context. Do not infer distinct matches from file count. Exact duplicate hashes can be detected; overlapping or re-encoded highlights may still duplicate an event. Offer a “same incident” grouping and prevent those records from inflating coverage.
 

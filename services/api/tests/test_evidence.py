@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app.evidence import EvidenceRejected, validate
 from app.schemas import ProviderEvidence, ProviderObservation
+from app.versions import SCHEMA_VERSION
 
 
 def _report(**overrides) -> ProviderEvidence:
@@ -19,7 +20,7 @@ def _report(**overrides) -> ProviderEvidence:
     }
     observation.update(overrides.pop("observation", {}))
     body = {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "target_revision": 2,
         "observations": [observation],
         "gaps": [],
@@ -36,8 +37,9 @@ def _validate(report: ProviderEvidence, **overrides):
         window_start_ms=0,
         window_end_ms=8000,
         frames_by_id={"f01": 1000, "f02": 2500},
+        located_ids={"f01", "f02"},
+        uncertain_ids=set(),
         not_visible_ids=set(),
-        identity_uncertain=False,
     )
     context.update(overrides)
     return validate(report, **context)
@@ -46,7 +48,7 @@ def _validate(report: ProviderEvidence, **overrides):
 def test_zero_observations_are_valid():
     report = ProviderEvidence.model_validate(
         {
-            "schema_version": "1.0",
+            "schema_version": SCHEMA_VERSION,
             "target_revision": 2,
             "observations": [],
             "gaps": ["No ball is visible."],
@@ -80,7 +82,7 @@ def test_extra_field_and_bad_enum_fail_schema():
     with pytest.raises(ValidationError):
         ProviderEvidence.model_validate(
             {
-                "schema_version": "1.0",
+                "schema_version": SCHEMA_VERSION,
                 "target_revision": 1,
                 "observations": [],
                 "gaps": [],
@@ -117,9 +119,26 @@ def test_visible_outcome_without_support_is_downgraded():
     assert "cleared" in result.observations[0]["limitations"][-1]
 
 
-def test_uncertain_identity_holds_attribution():
-    result = _validate(_report(), identity_uncertain=True)
-    assert result.observations[0]["attribution_hold"] is True
+def test_clear_continuity_is_not_held_without_a_name():
+    result = _validate(_report())
+    assert result.observations[0]["attribution_hold"] is False
+    assert result.observations[0]["seek_ms"] == 1000
+
+
+def test_uncertain_or_continuity_frame_holds():
+    uncertain = _validate(_report(), uncertain_ids={"f02"})
+    assert uncertain.observations[0]["attribution_hold"] is True
+    assert uncertain.observations[0]["hold_frame_id"] == "f02"
+    continuity = _validate(_report(observation={"continuity_issues": [{"frame_id": "f01", "reason": "another player overlaps the box"}]}))
+    assert continuity.observations[0]["attribution_hold"] is True
+    assert "f01" in continuity.observations[0]["hold_reason"]
+
+
+def test_unknown_continuity_frame_is_dropped():
+    result = _validate(_report(observation={"continuity_issues": [{"frame_id": "f99", "reason": "overlap"}]}))
+    assert result.observations[0]["attribution_hold"] is False
+    assert result.observations[0]["continuity_issues"] == []
+    assert result.issues[0]["code"] == "unknown_continuity_frame"
 
 
 def test_clear_supported_observation_is_kept():

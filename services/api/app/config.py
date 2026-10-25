@@ -30,13 +30,17 @@ class Settings(BaseSettings):
     job_budget_usd: float = 1.0
     price_input_per_mtok: float = 2.0
     price_output_per_mtok: float = 10.0
-    max_output_tokens: int = 1500
+    max_output_tokens: int = 4000
     provider_timeout_seconds: float = 90.0
     job_deadline_seconds: float = 120.0
     tracker_backend: str = "manual"
     enable_jev: bool = False
     evidence_provider: str = "anthropic"
     allow_replay: bool = False
+    convex_url: str = ""
+    convex_worker_secret: str = ""
+    convex_worker_id: str = "laptop-worker"
+    convex_poll_seconds: float = 2.0
 
     @property
     def root(self) -> Path:

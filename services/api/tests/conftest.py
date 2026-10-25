@@ -18,6 +18,8 @@ def client(tmp_path):
         min_window_seconds=1,
         max_window_seconds=30,
         app_origin="http://localhost:3000",
+        convex_url="",
+        convex_worker_secret="",
     )
     application = create_app(settings)
     with TestClient(application) as test_client:
@@ -37,6 +39,8 @@ def make_client(tmp_path, **overrides):
         min_window_seconds=1,
         max_window_seconds=30,
         app_origin="http://localhost:3000",
+        convex_url="",
+        convex_worker_secret="",
     )
     values.update(overrides)
     application = create_app(Settings(**values))

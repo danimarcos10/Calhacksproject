@@ -1,24 +1,37 @@
 # Current state
 
-Status: local upload, playback, sampling, anchors, and evidence cards work. A real Claude call has not run.
+Status: M1 coach review is done and browser-verified. All work since M0 is uncommitted.
 
-Verified:
-- pytest: 18 passed in `services/api` (VFR timestamps against a moving bar, rotation, HTTP 206, upload rejections, citation and revision checks, budget, idempotency, auth failure, missing key).
-- vitest: 5 passed for contain-fit geometry. `npx tsc --noEmit` passed in `apps/web`.
-- Commons clip `vid_9f25d5e3c9e74b41`, 18.518 s, 1920x1080. The player reached readyState 4. Media requests returned 206.
-- Window 0–8000 ms, 16 frames. Revision 1 boxes the blue player on f05 (2.135 s); other frames are marked not visible; identity is uncertain.
-- Browser: sample, save, analyze. Stages showed timestamps. The one card spans 0:00.000–0:07.975. Clicking it paused the video and set `currentTime` to 0, matching the card.
-- `scripts/check_provider.py` exited 2. `ANTHROPIC_API_KEY` is not set.
+Open `http://localhost:3000/review/sub_32eb531dc1444352` in a browser that has used the stadium review link. The link is printed by `scripts/seed_review.py`; the code lives in that browser.
 
-Blocker: without a key there is no video-to-Claude-to-evidence run. The walkthrough set `EVIDENCE_PROVIDER=synthetic`. The page banner said it is not football analysis. That run is not the M0 provider gate.
+Stadium window 1 (0–7 s) is on selection 2, a labelled correction. It has hand boxes on f01–f04, f07 and f10, tracker estimates on f08 and f09, and f05 and f06 marked uncertain. Its current run made two observations, both accepted:
+- A passing moment, 0–1.084 s.
+- An off-ball movement moment, 3.237–4.838 s.
 
-Automation gaps: the file dialog was not driven, so the clip was posted to the API and the page opened at `/?video=`. An untrusted pointer event did not start a box drag; the box was applied through the canvas pointer handlers.
+The selection 1 passing moment is stale and kept in history. Window 2 (7–14 s) is unprepared: same-kit players contest a header during a pan. Versailles is a separate player with zero observations.
 
-Commands, from `secondlook/`:
-- API: `services\api\.venv\Scripts\python -m uvicorn app.main:app --app-dir services/api --host 127.0.0.1 --port 8000`
-- Web: `npm run dev` in `apps/web` at http://localhost:3000
-- Tests: `python -m pytest` in `services/api`; `npm test` in `apps/web`
+Convex runs on a local deployment at `http://127.0.0.1:3210`. A cloud deployment needs `npx convex login` in `apps/web`, then `scripts/convex_setup.py` and `scripts/seed_review.py`.
 
-Next task: put the key in `secondlook/.env`, run `check_provider.py`, and repeat this 0–8 s window on Claude. M1 is next after that: durable jobs, accept/reject, anchor correction, and revision invalidation. M1 has not been started.
+Verified this session:
+- pytest: 34 passed.
+- vitest: 25 passed.
+- `tsc --noEmit`: clean.
+- `scripts/check_convex.py`: 11/11.
+- Browser: playback, accept, refresh and a restart of both backends, two-session reject and footage request, correction stale in both tabs, re-analysis without the stale moment returning.
 
-Time left: about 15h 23m at 2026-10-25 00:37 UTC. Deadline 16:00 UTC.
+Spend: one paid call in M1 ($0.04559). Project total $0.1805 over 6 reconciled calls.
+
+Run from `secondlook/`:
+- `npx convex dev` in `apps/web`.
+- The API: `services\api\.venv\Scripts\python -m uvicorn app.main:app --app-dir services/api --host 127.0.0.1 --port 8000`.
+- `npm run dev` in `apps/web`.
+
+Open questions:
+- No coach has tried it.
+- The Devpost rule "Team required: 2 to 4 members" against a solo entry.
+- The Convex prize amounts conflict.
+- The stadium clip's rights are unverified, so it stays local.
+
+Next: a backup video, one person trying the review, then commit when asked.
+
+Time: 04:10 UTC, deadline 16:00 UTC.

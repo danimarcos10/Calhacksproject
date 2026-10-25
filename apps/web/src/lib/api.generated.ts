@@ -236,8 +236,19 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "box" | "not_visible";
+            state: "located" | "not_visible" | "uncertain";
+            /** Source */
+            source?: ("manual" | "estimated") | null;
             box?: components["schemas"]["Box"] | null;
+            /** Method */
+            method?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Explicit
+             * @default false
+             */
+            explicit: boolean;
         };
         /** Body_create_video_api_videos_post */
         Body_create_video_api_videos_post: {
@@ -259,6 +270,13 @@ export interface components {
             w: number;
             /** H */
             h: number;
+        };
+        /** ContinuityIssue */
+        ContinuityIssue: {
+            /** Frame Id */
+            frame_id: string;
+            /** Reason */
+            reason: string;
         };
         /** FrameOut */
         FrameOut: {
@@ -371,10 +389,18 @@ export interface components {
             identity_status: string;
             /** Limitations */
             limitations: string[];
+            /** Continuity Issues */
+            continuity_issues: components["schemas"]["ContinuityIssue"][];
+            /** Seek Ms */
+            seek_ms: number;
             /** Review Status */
             review_status: string;
             /** Attribution Hold */
             attribution_hold: boolean;
+            /** Hold Reason */
+            hold_reason: string;
+            /** Hold Frame Id */
+            hold_frame_id?: string | null;
         };
         /** ProvenanceOut */
         ProvenanceOut: {
@@ -458,6 +484,10 @@ export interface components {
             identity_uncertain: boolean;
             /** Role */
             role: string;
+            /** Note */
+            note: string;
+            /** Needs Review */
+            needs_review: string[];
             /** Created At */
             created_at: string;
         };
@@ -481,7 +511,7 @@ export interface components {
             manifest_id: string;
             /**
              * Role
-             * @default fullback
+             * @default
              */
             role: string;
             /**
@@ -495,10 +525,10 @@ export interface components {
              */
             team_color_note: string;
             /**
-             * Identity Uncertain
-             * @default false
+             * Note
+             * @default
              */
-            identity_uncertain: boolean;
+            note: string;
             /** Anchors */
             anchors: components["schemas"]["AnchorIn"][];
         };

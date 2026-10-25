@@ -20,7 +20,26 @@
       "review_window": {
         "start_ms": 0,
         "end_ms": 8000,
-        "target": "Blue-kit player standing apart on the right side of the goalmouth in the opening seconds. Reviewed as a fullback. The number is not readable, so identity stays uncertain."
+        "target": "Blue-kit player standing apart on the right side of the goalmouth in the opening seconds. No role is assumed. The number is not readable."
+      }
+    },
+    {
+      "local_filename": "15449351-hd_1920_1080_60fps.mp4",
+      "source": "user-supplied, source unconfirmed (filename matches Pexels 15449351). The Pexels page returned HTTP 403 on 2026-10-25, so the license was not confirmed.",
+      "retrieved": "2026-10-25",
+      "license": "unconfirmed",
+      "author": "unconfirmed",
+      "title": "Stadium set piece, wall sign reads Instituto Panameño de Deportes",
+      "transformation": "Uploaded through the local API, which makes an H.264 playback copy and scaled JPEG stills for the model.",
+      "permission_and_permitted_use": "User-supplied local file. Do not publish.",
+      "adult_or_required_permission_confirmed": "Players appear adult in a stadium match. Not individually verified.",
+      "can_send_frames_to_provider": true,
+      "can_show_at_demo": true,
+      "can_publish": false,
+      "review_window": {
+        "start_ms": 0,
+        "end_ms": 7000,
+        "target": "Solid-blue player who starts isolated at the right edge and runs left toward the penalty area during the set piece. No role is assumed. The number is not readable at this distance."
       }
     }
   ]

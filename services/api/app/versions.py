@@ -1,3 +1,3 @@
-PROMPT_VERSION = "evidence-v1"
-SCHEMA_VERSION = "1.0"
+PROMPT_VERSION = "evidence-v2"
+SCHEMA_VERSION = "1.1"
 SAMPLER_VERSION = "sampler-v1"

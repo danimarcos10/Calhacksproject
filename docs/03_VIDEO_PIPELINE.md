@@ -29,10 +29,18 @@ Keep full-frame context at a manageable resolution, approximately 960 pixels on 
 
 # Player selection, tracking, and identity boundaries
 
-## M0: make identity explicit
-Ask the user to draw a box around the target on the first, middle and last sampled frames where the player is visible. Store normalized coordinates, frame ID, optional jersey note and team-color note. These notes are user assertions, not independently verified identity. Allow a frame to be marked “target not visible.”
+## M0.5: a few anchors, then a checkable observation
 
-Do not paint an interpolated box as if a model tracked it. Between manual anchors, label its origin as interpolated/unverified and inspect it before use. The first version may ask for extra anchors on ambiguous frames. Any observation spanning an uncertain identity segment must be withheld or sent for explicit human review.
+A missing frame is not annotated. The user can mark a frame located (manual), not visible, or uncertain. A CPU CSRT pass can propose estimated boxes between manual anchors, or flag a frame uncertain when the forward and backward tracks disagree or the track has only one direction. Estimated boxes are drawn dashed and labelled unverified. They are not saved until the user saves the target. Jersey and team-colour notes are optional and are not used to identify the player. There is no default role.
+
+An observation is held when it cites no located frame, or cites an uncertain, not-visible, or continuity-problem frame, or the model cannot keep the same person across the cited frames. An unknown name does not hold it. A visible action can keep outcome `not_observable`. The card seeks to the earliest cited frame inside its interval.
+
+This replaces the M0 wording that asked for a box on the first, middle and last visible frames and treated every other frame as target not visible.
+
+## M0: make identity explicit
+The first slice asked for a box on the first, middle and last sampled frames and allowed “target not visible.” That bulk fill is what M0.5 corrects. Stored rows are not rewritten. A legacy not-visible mark or a clip-wide identity-uncertain flag is returned with a review reason.
+
+Do not paint an interpolated box as if a model tracked it. Between manual anchors, an estimated box stays labelled unverified until the user accepts it. Any observation spanning an uncertain frame is held.
 
 ## Coordinate mapping
 For an oriented image W by H in a canvas Cw by Ch using contain-fit, set scale = min(Cw/W, Ch/H). The rendered image offsets are ox = (Cw-scale*W)/2 and oy = (Ch-scale*H)/2. A CSS click (x,y) maps to normalized coordinates ((x-ox)/(scale*W), (y-oy)/(scale*H)). Reject clicks in the letterbox margins. Keep CSS and device-pixel coordinates distinct.
@@ -40,6 +48,8 @@ For an oriented image W by H in a canvas Cw by Ch using contain-fit, set scale =
 Apply the same orientation before selection, tracking and model input. Test portrait rotation and browser resize. The stored rectangle must survive a round trip from normalized coordinates back to the rendered image without moving to another player.
 
 ## Optional SAM 2.1 path
+M0.5 did not install SAM 2 or torch. The shipped tracker is the CPU CSRT proposal pass, and estimated boxes stay unverified until the user saves them. This section remains a later option for a machine with a usable GPU.
+
 Use the official Meta SAM 2 video predictor with point/box prompts and corrective prompts. Start with the small checkpoint, sam2.1_hiera_small.pt, and its matching config. Follow the repository's installation requirements on the actual machine. A usable CUDA environment is a prerequisite for the planned timebox, not something this plan guarantees. [S11]
 
 Process short windows, one target at a time. Convert masks to proposed boxes and store frame-level state. Stop or ask for a new anchor at a shot cut, a long occlusion, an implausible jump or overlap ambiguity. Heuristic thresholds are tunable warning signals, not calibrated identity probabilities.

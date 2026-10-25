@@ -14,6 +14,7 @@ import threading
 import time
 from pathlib import Path
 
+from app.anchors import present_anchor
 from app.annotate import annotated_jpeg
 from app.budget import actual_usd, can_reserve, estimate_usd, reconcile, release, reserve
 from app.db import Database, new_id, utcnow
@@ -22,7 +23,7 @@ from app.providers.base import EvidenceProvider, ProviderCallResult, ProviderErr
 from app.versions import PROMPT_VERSION, SAMPLER_VERSION, SCHEMA_VERSION
 
 log = logging.getLogger("secondlook.worker")
-PROMPT_TEXT = (Path(__file__).resolve().parent / "prompts" / "evidence_v1.md").read_text(encoding="utf-8")
+PROMPT_TEXT = (Path(__file__).resolve().parent / "prompts" / "evidence_v2.md").read_text(encoding="utf-8")
 
 
 def fingerprint(
@@ -91,7 +92,7 @@ def process_job(app, job_id: str) -> None:
         if video is None or manifest is None or revision is None:
             _fail(db, job_id, "missing_input", "The selected clip or target is no longer available.", False)
             return
-        latest = db.latest_revision(video["id"])
+        latest = db.latest_revision_for_manifest(manifest["id"])
         if latest is None or latest["id"] != revision["id"]:
             _fail(
                 db,
@@ -124,16 +125,16 @@ def process_job(app, job_id: str) -> None:
         db.set_stage(job_id, "preparing_frames")
         _deadline(settings, started)
         frames = manifest["frames"]
-        anchors = {anchor["frame_id"]: anchor for anchor in revision["anchors"]}
+        anchors = {anchor["frame_id"]: present_anchor(anchor) for anchor in revision["anchors"]}
         job_dir = settings.data_path / "jobs" / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
         sent_meta = []
         content: list[dict] = [{"type": "text", "text": _preamble(revision, frames, anchors)}]
         for frame in frames:
             anchor = anchors.get(frame["frame_id"])
-            box = anchor.get("box") if anchor and anchor.get("state") == "box" else None
+            box, kind = _overlay(anchor)
             image_path = _under(settings.data_path, frame["relative"])
-            payload = annotated_jpeg(image_path, box)
+            payload = annotated_jpeg(image_path, box, kind)
             digest = hashlib.sha256(payload).hexdigest()
             (job_dir / f"{frame['frame_id']}.jpg").write_bytes(payload)
             sent_meta.append(
@@ -188,7 +189,7 @@ def process_job(app, job_id: str) -> None:
 
         db.set_stage(job_id, "validating_evidence")
         _deadline(settings, started)
-        latest = db.latest_revision(video["id"])
+        latest = db.latest_revision_for_manifest(manifest["id"])
         if latest is None or latest["id"] != revision["id"]:
             failed_run = _record_failed_run(db, settings, provider, job, result, cost, "stale_revision")
             _fail(
@@ -207,10 +208,11 @@ def process_job(app, job_id: str) -> None:
                 window_start_ms=manifest["start_ms"],
                 window_end_ms=manifest["end_ms"],
                 frames_by_id={frame["frame_id"]: frame["source_t_ms"] for frame in frames},
+                located_ids={frame_id for frame_id, anchor in anchors.items() if anchor.get("state") == "located"},
+                uncertain_ids={frame_id for frame_id, anchor in anchors.items() if anchor.get("state") == "uncertain"},
                 not_visible_ids={
-                    anchor["frame_id"] for anchor in revision["anchors"] if anchor.get("state") == "not_visible"
+                    frame_id for frame_id, anchor in anchors.items() if anchor.get("state") == "not_visible"
                 },
-                identity_uncertain=bool(revision["identity_uncertain"]),
             )
         except EvidenceRejected as exc:
             failed_run = _record_failed_run(db, settings, provider, job, result, cost, exc.code)
@@ -367,34 +369,57 @@ def _model_name(settings, provider: EvidenceProvider) -> str:
     return settings.anthropic_model
 
 
+def _overlay(anchor: dict | None) -> tuple[dict | None, str]:
+    if not anchor or not anchor.get("box"):
+        return None, "manual"
+    if anchor.get("state") == "located" and anchor.get("source") == "estimated":
+        return anchor["box"], "estimated"
+    if anchor.get("state") == "uncertain":
+        return anchor["box"], "uncertain"
+    if anchor.get("state") == "located":
+        return anchor["box"], "manual"
+    return None, "manual"
+
+
 def _preamble(revision: dict, frames: list[dict], anchors: dict) -> str:
+    role = (revision.get("role") or "").strip() or "unspecified"
     lines = [
         f"schema_version={SCHEMA_VERSION}",
         f"target_revision={revision['revision']}",
-        f"role={revision['role']}",
+        f"role={role}",
+        "Jersey and team-colour notes are optional and are not used to identify the player.",
         f"jersey_note={revision['jersey_note'] or 'none'}",
         f"team_color_note={revision['team_color_note'] or 'none'}",
-        f"identity_uncertain={'true' if revision['identity_uncertain'] else 'false'}",
-        "These notes are the coach's unverified assertions.",
+        "Refer to the person as the selected player. A name or shirt number is not required.",
         "Frame table:",
     ]
     for frame in frames:
         lines.append(f"frame_id={frame['frame_id']} source_t_ms={frame['source_t_ms']}")
-    lines.append("Anchors (manual, not a tracker):")
+    lines.append("Anchor states:")
     for frame in frames:
         anchor = anchors.get(frame["frame_id"])
-        if not anchor:
-            lines.append(f"{frame['frame_id']}: unmarked")
-        elif anchor.get("state") == "not_visible":
-            lines.append(f"{frame['frame_id']}: target not visible")
-        else:
-            box = anchor.get("box") or {}
-            lines.append(
-                f"{frame['frame_id']}: manual box x={box.get('x')} y={box.get('y')} w={box.get('w')} h={box.get('h')}"
-            )
-    if revision["identity_uncertain"]:
-        lines.append("The coach marked identity as uncertain. Withhold attribution.")
+        lines.append(f"{frame['frame_id']}: {_anchor_line(anchor)}")
+    lines.append("A frame that is not annotated has no location. Do not treat it as target not visible.")
     return "\n".join(lines)
+
+
+def _anchor_line(anchor: dict | None) -> str:
+    if not anchor:
+        return "not annotated"
+    state = anchor.get("state")
+    box = anchor.get("box") or {}
+    box_text = f"x={box.get('x')} y={box.get('y')} w={box.get('w')} h={box.get('h')}"
+    if state == "not_visible":
+        return "not visible (explicit)"
+    if state == "uncertain":
+        reason = anchor.get("reason") or "needs a check"
+        return f"location uncertain ({reason})" + (f", box {box_text}" if anchor.get("box") else "")
+    if state == "located" and anchor.get("source") == "estimated":
+        method = anchor.get("method") or "software"
+        return f"located, software estimate, unverified, method={method}, box {box_text}"
+    if state == "located":
+        return f"located, manual selection, box {box_text}"
+    return "not annotated"
 
 
 def _under(root: Path, relative: str) -> Path:

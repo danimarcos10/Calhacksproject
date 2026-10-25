@@ -1,12 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnchorCard, anchorFrom, draftFrom, type Draft } from "@/components/AnchorEditor";
 import {
   API_ORIGIN,
   type Analysis,
-  type Anchor,
-  type Frame,
   type Job,
   type Manifest,
   type ProviderStatus,
@@ -17,12 +17,13 @@ import {
   getJob,
   getReady,
   getVideo,
+  proposeLocations,
   sampleWindow,
   saveTarget,
   startAnalysis,
   uploadClip,
 } from "@/lib/api";
-import { boxFromPoints, clampToImage, containFit, cssToNormalized, normalizedToCss, type Box } from "@/lib/geometry";
+import { nextAttention, summaryLine } from "@/lib/attention";
 
 const STAGE_LABEL: Record<string, string> = {
   queued: "Queued",
@@ -37,8 +38,6 @@ const STAGE_LABEL: Record<string, string> = {
 };
 
 const TERMINAL = new Set(["succeeded", "failed", "interrupted", "cancelled"]);
-
-type Draft = Record<string, { state: "box" | "not_visible" | "unmarked"; box?: Box }>;
 
 export function ReviewApp() {
   const router = useRouter();
@@ -59,8 +58,8 @@ export function ReviewApp() {
   const [revision, setRevision] = useState<Revision | null>(null);
   const [jersey, setJersey] = useState("");
   const [teamColor, setTeamColor] = useState("");
-  const [uncertain, setUncertain] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
+  const [attentionId, setAttentionId] = useState<string | null>(null);
   const [activeMs, setActiveMs] = useState<number | null>(null);
   const [busy, setBusy] = useState("");
 
@@ -84,7 +83,6 @@ export function ReviewApp() {
         setDirty(false);
         setJersey(saved?.jersey_note ?? "");
         setTeamColor(saved?.team_color_note ?? "");
-        setUncertain(saved?.identity_uncertain ?? false);
         if (latest) setStartMs(latest.start_ms);
       })
       .catch((error: Error) => setMessage(error.message));
@@ -156,26 +154,22 @@ export function ReviewApp() {
 
   async function onSave() {
     if (!video || !manifest) return;
-    const anchors: Anchor[] = manifest.frames
-      .map((frame) => ({ frame, mark: draft[frame.frame_id] }))
-      .filter((item) => item.mark && item.mark.state !== "unmarked")
-      .map((item) =>
-        item.mark.state === "box"
-          ? { frame_id: item.frame.frame_id, state: "box" as const, box: item.mark.box }
-          : { frame_id: item.frame.frame_id, state: "not_visible" as const },
-      );
-    if (!anchors.some((anchor) => anchor.state === "box")) {
-      setMessage("Mark the target on at least one frame.");
+    const anchors = manifest.frames.flatMap((frame) => {
+      const anchor = anchorFrom(frame.frame_id, draft[frame.frame_id]);
+      return anchor ? [anchor] : [];
+    });
+    if (!anchors.some((anchor) => anchor.state === "located")) {
+      setMessage("Mark the selected player on at least one frame.");
       return;
     }
     setBusy("Saving target");
     try {
       const saved = await saveTarget(video.id, {
         manifest_id: manifest.id,
-        role: "fullback",
+        role: "",
         jersey_note: jersey,
         team_color_note: teamColor,
-        identity_uncertain: uncertain,
+        note: "",
         anchors,
       });
       setRevision(saved);
@@ -202,18 +196,49 @@ export function ReviewApp() {
     }
   }
 
-  function markRestNotVisible() {
-    if (!manifest) return;
-    setDraft((current) => {
-      const next = { ...current };
-      for (const frame of manifest.frames) {
-        if (!next[frame.frame_id] || next[frame.frame_id].state === "unmarked") {
-          next[frame.frame_id] = { state: "not_visible" };
-        }
-      }
-      return next;
+  async function onPropose() {
+    if (!video || !manifest) return;
+    const anchors = manifest.frames.flatMap((frame) => {
+      const anchor = anchorFrom(frame.frame_id, draft[frame.frame_id]);
+      return anchor ? [anchor] : [];
     });
-    setDirty(true);
+    if (!anchors.some((anchor) => anchor.state === "located" && anchor.source !== "estimated")) {
+      setMessage("Draw the player on at least one frame before proposing the rest.");
+      return;
+    }
+    setBusy("Proposing locations");
+    setMessage("");
+    try {
+      const proposed = await proposeLocations(video.id, { manifest_id: manifest.id, anchors });
+      setDraft((current) => {
+        const next = { ...current };
+        for (const anchor of proposed.anchors) {
+          const existing = next[anchor.frame_id];
+          if (existing?.state === "located" && existing.source !== "estimated") continue;
+          if (existing?.state === "not_visible") continue;
+          next[anchor.frame_id] = {
+            state: anchor.state,
+            source: "estimated",
+            box: anchor.box ?? undefined,
+            method: anchor.method ?? undefined,
+            reason: anchor.reason ?? undefined,
+          };
+        }
+        return next;
+      });
+      setDirty(true);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Locations could not be proposed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function focusFrame(frameId: string) {
+    const frame = manifest?.frames.find((item) => item.frame_id === frameId);
+    if (frame) seek(frame.source_t_ms);
+    setAttentionId(frameId);
+    document.getElementById(`frame-${frameId}`)?.scrollIntoView({ inline: "center", block: "nearest" });
   }
 
   const analysis: Analysis | null = job?.result ?? null;
@@ -224,6 +249,9 @@ export function ReviewApp() {
       <header>
         <h1>SecondLook</h1>
         <p>Candidate observations stay tied to the clip. They are unreviewed suggestions, not ratings or odds.</p>
+        <p className="meta">
+          Single-clip workbench. Coaches review submissions in the <Link href="/review">review inbox</Link>.
+        </p>
       </header>
       {synthetic && (
         <div className="banner" role="status">
@@ -294,29 +322,42 @@ export function ReviewApp() {
             </div>
             {manifest && (
               <>
+                <p className="note">{summaryLine(manifest.frames.map((frame) => draft[frame.frame_id] ?? { state: "unmarked" }))}</p>
+                <div className="controls">
+                  <button type="button" onClick={() => void onPropose()} disabled={Boolean(busy)}>Propose locations</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const frameId = nextAttention(manifest.frames.map((frame) => frame.frame_id), draft);
+                      if (frameId) focusFrame(frameId);
+                      else setMessage("No uncertain or in-between frame needs attention.");
+                    }}
+                  >
+                    Next frame needing attention
+                  </button>
+                </div>
+                {revision?.needs_review.map((reason) => (
+                  <p key={reason} className="error">{reason}</p>
+                ))}
                 <div className="frames">
                   {manifest.frames.map((frame) => (
                     <AnchorCard
                       key={frame.frame_id}
                       frame={frame}
                       mark={draft[frame.frame_id] ?? { state: "unmarked" }}
+                      attention={attentionId === frame.frame_id}
                       onChange={(next) => changeDraft(frame.frame_id, next)}
                     />
                   ))}
                 </div>
                 <div className="controls">
-                  <button type="button" onClick={markRestNotVisible}>Not visible on the rest</button>
                   <label>
-                    Jersey note
+                    Jersey or number (optional, not used to identify the player)
                     <input value={jersey} onChange={(event) => { setJersey(event.target.value); setDirty(true); }} type="text" />
                   </label>
                   <label>
-                    Team colour
+                    Team colour (optional, not used to identify the player)
                     <input value={teamColor} onChange={(event) => { setTeamColor(event.target.value); setDirty(true); }} type="text" />
-                  </label>
-                  <label>
-                    <input type="checkbox" checked={uncertain} onChange={(event) => { setUncertain(event.target.checked); setDirty(true); }} />
-                    Identity uncertain
                   </label>
                   <button type="button" onClick={() => void onSave()} disabled={Boolean(busy)}>Save target</button>
                   <span>{revision && !dirty ? `Revision ${revision.revision}` : "Target not saved"}</span>
@@ -355,21 +396,40 @@ export function ReviewApp() {
             )}
             <div className="cards">
               {analysis?.observations.map((observation) => (
-                <button
+                <div
                   key={observation.id}
-                  type="button"
-                  className={activeMs === observation.start_ms ? "card selected" : "card"}
-                  data-start-ms={observation.start_ms}
-                  onClick={() => seek(observation.start_ms)}
+                  role="button"
+                  tabIndex={0}
+                  className={activeMs === observation.seek_ms ? "card selected" : "card"}
+                  data-seek-ms={observation.seek_ms}
+                  onClick={() => seek(observation.seek_ms)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      seek(observation.seek_ms);
+                    }
+                  }}
                 >
                   <h3>{label(observation.category)}</h3>
                   <p>{observation.visible_action}</p>
                   <p>{formatMs(observation.start_ms)}–{formatMs(observation.end_ms)}</p>
                   <p>Outcome: {label(observation.outcome)}</p>
                   <span className="tag">Candidate, unreviewed</span>
-                  {observation.attribution_hold && <span className="tag hold">Attribution withheld</span>}
+                  <span className="tag">{provenanceLabel(analysis)}</span>
+                  {observation.attribution_hold && <span className="tag hold">Held: {observation.hold_reason}</span>}
+                  {observation.hold_frame_id && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        focusFrame(observation.hold_frame_id as string);
+                      }}
+                    >
+                      Open {observation.hold_frame_id}
+                    </button>
+                  )}
                   {observation.limitations[0] && <p className="meta">{observation.limitations[0]}</p>}
-                </button>
+                </div>
               ))}
             </div>
             {analysis && analysis.observations.length === 0 && (
@@ -381,7 +441,7 @@ export function ReviewApp() {
             ))}
             {analysis && (
               <p className="meta">
-                {analysis.provenance.model_returned || analysis.provenance.model_requested} · {analysis.provenance.prompt_version}
+                {provenanceLabel(analysis)} · {analysis.provenance.model_returned || analysis.provenance.model_requested} · {analysis.provenance.prompt_version}
                 {analysis.provenance.usage.input_tokens != null && ` · ${analysis.provenance.usage.input_tokens}+${analysis.provenance.usage.output_tokens ?? 0} tokens`}
                 {analysis.provenance.cost_usd != null && ` · $${analysis.provenance.cost_usd.toFixed(4)}`}
                 {analysis.provenance.latency_ms != null && ` · ${(analysis.provenance.latency_ms / 1000).toFixed(1)}s`}
@@ -395,102 +455,9 @@ export function ReviewApp() {
   );
 }
 
-function AnchorCard({ frame, mark, onChange }: { frame: Frame; mark: Draft[string]; onChange: (next: Draft[string]) => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const drag = useRef<{ x: number; y: number } | null>(null);
-
-  const paint = useCallback(() => {
-    const canvas = canvasRef.current;
-    const image = imageRef.current;
-    if (!canvas || !image) return;
-    const cssWidth = canvas.clientWidth;
-    const cssHeight = canvas.clientHeight;
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = Math.round(cssWidth * ratio);
-    canvas.height = Math.round(cssHeight * ratio);
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.fillStyle = "#0b1220";
-    context.fillRect(0, 0, cssWidth, cssHeight);
-    const fit = containFit(frame.width, frame.height, cssWidth, cssHeight);
-    context.drawImage(image, fit.offsetX, fit.offsetY, frame.width * fit.scale, frame.height * fit.scale);
-    if (mark.state === "box" && mark.box) {
-      const origin = normalizedToCss(mark.box.x, mark.box.y, frame.width, frame.height, cssWidth, cssHeight);
-      const far = normalizedToCss(mark.box.x + mark.box.w, mark.box.y + mark.box.h, frame.width, frame.height, cssWidth, cssHeight);
-      context.strokeStyle = "#e0a100";
-      context.lineWidth = 2;
-      context.strokeRect(origin.x, origin.y, far.x - origin.x, far.y - origin.y);
-    }
-  }, [frame, mark]);
-
-  const paintRef = useRef(paint);
-  paintRef.current = paint;
-
-  useEffect(() => {
-    const image = new Image();
-    image.onload = () => {
-      imageRef.current = image;
-      paintRef.current();
-    };
-    image.src = `${API_ORIGIN}${frame.url}`;
-    return () => {
-      image.onload = null;
-    };
-  }, [frame.url]);
-
-  useEffect(() => {
-    paint();
-  }, [paint]);
-
-  function point(event: React.PointerEvent<HTMLCanvasElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  }
-
-  return (
-    <div className="frame">
-      <canvas
-        ref={canvasRef}
-        aria-label={`Anchor ${frame.frame_id}`}
-        onPointerDown={(event) => {
-          const canvas = event.currentTarget;
-          const local = point(event);
-          const normalized = cssToNormalized(local.x, local.y, frame.width, frame.height, canvas.clientWidth, canvas.clientHeight);
-          if (!normalized) return;
-          drag.current = normalized;
-          canvas.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          if (!drag.current) return;
-          const canvas = event.currentTarget;
-          const local = point(event);
-          const current = clampToImage(local.x, local.y, frame.width, frame.height, canvas.clientWidth, canvas.clientHeight);
-          const box = boxFromPoints(drag.current, current);
-          if (box) onChange({ state: "box", box });
-        }}
-        onPointerUp={() => {
-          drag.current = null;
-        }}
-      />
-      <p>{frame.frame_id} · {formatMs(frame.source_t_ms)} · {mark.state === "unmarked" ? "unmarked" : mark.state === "box" ? "box" : "target not visible"}</p>
-      <button type="button" onClick={() => onChange({ state: "not_visible" })}>Target not visible</button>
-    </div>
-  );
-}
-
-function draftFrom(manifest: Manifest | null, revision: Revision | null): Draft {
-  if (!manifest) return {};
-  const saved = new Map((revision?.anchors ?? []).map((anchor) => [anchor.frame_id, anchor]));
-  return Object.fromEntries(
-    manifest.frames.map((frame) => {
-      const anchor = saved.get(frame.frame_id);
-      if (!anchor) return [frame.frame_id, { state: "unmarked" as const }];
-      if (anchor.state === "box" && anchor.box) return [frame.frame_id, { state: "box" as const, box: anchor.box }];
-      return [frame.frame_id, { state: "not_visible" as const }];
-    }),
-  );
+function provenanceLabel(analysis: Analysis) {
+  if (analysis.provenance.provider_label === "synthetic") return "synthetic";
+  return analysis.provenance.cache_status === "cached" ? "live Claude · cached" : "live Claude";
 }
 
 function clampStart(value: number, lengthSec: number, duration: number) {

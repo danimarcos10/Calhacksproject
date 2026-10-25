@@ -43,8 +43,9 @@ def validate(
     window_start_ms: int,
     window_end_ms: int,
     frames_by_id: dict[str, int],
+    located_ids: set[str],
+    uncertain_ids: set[str],
     not_visible_ids: set[str],
-    identity_uncertain: bool,
 ) -> ValidatedEvidence:
     if report.schema_version != SCHEMA_VERSION:
         raise EvidenceRejected(
@@ -140,25 +141,65 @@ def validate(
             limitations.append(
                 "The model marked an outcome as visible without a clearly attributed view, so the outcome was cleared."
             )
-        every_cited_hidden = all(frame_id in not_visible_ids for frame_id in observation.frame_ids)
-        hold = (
-            identity_uncertain
-            or observation.identity_status != IdentityStatus.clear_in_cited_frames
-            or every_cited_hidden
-        )
+        continuity = []
+        for issue in observation.continuity_issues:
+            if issue.frame_id not in frames_by_id:
+                result.issues.append(
+                    {
+                        "index": index,
+                        "code": "unknown_continuity_frame",
+                        "message": "A continuity note named a frame that was not sent, so that note was dropped.",
+                    }
+                )
+                continue
+            continuity.append({"frame_id": issue.frame_id, "reason": issue.reason.strip()})
+        issue_ids = {item["frame_id"] for item in continuity}
+        cited = list(observation.frame_ids)
+        blocked = [
+            frame_id
+            for frame_id in cited
+            if frame_id in uncertain_ids or frame_id in not_visible_ids or frame_id in issue_ids
+        ]
+        has_located = any(frame_id in located_ids for frame_id in cited)
+        hold = False
+        hold_reason = ""
+        hold_frame_id = None
+        if not has_located:
+            hold = True
+            hold_reason = "No cited frame has a location for the selected player."
+            hold_frame_id = cited[0]
+        elif blocked:
+            hold = True
+            hold_frame_id = blocked[0]
+            if hold_frame_id in issue_ids:
+                reason = next(item["reason"] for item in continuity if item["frame_id"] == hold_frame_id)
+                hold_reason = f"{hold_frame_id} has a continuity problem: {reason}"
+            elif hold_frame_id in uncertain_ids:
+                hold_reason = f"{hold_frame_id} is marked location uncertain."
+            else:
+                hold_reason = f"{hold_frame_id} is marked not visible."
+        elif observation.identity_status != IdentityStatus.clear_in_cited_frames:
+            hold = True
+            hold_reason = "The model could not confirm this is the same player across the cited frames."
+            hold_frame_id = cited[0]
+        seek_ms = min(frames_by_id[frame_id] for frame_id in cited_inside)
         result.observations.append(
             {
                 "category": observation.category.value,
                 "start_ms": observation.start_ms,
                 "end_ms": observation.end_ms,
-                "frame_ids": list(observation.frame_ids),
+                "frame_ids": cited,
                 "visible_action": action,
                 "outcome": outcome.value,
                 "evidence_status": observation.evidence_status.value,
                 "identity_status": observation.identity_status.value,
                 "limitations": limitations[:6],
+                "continuity_issues": continuity,
+                "seek_ms": seek_ms,
                 "review_status": "candidate",
                 "attribution_hold": hold,
+                "hold_reason": hold_reason,
+                "hold_frame_id": hold_frame_id,
             }
         )
     return result

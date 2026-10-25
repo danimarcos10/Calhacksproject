@@ -62,6 +62,16 @@ export async function sampleWindow(videoId: string, startMs: number, endMs: numb
   );
 }
 
+export async function proposeLocations(videoId: string, body: { manifest_id: string; anchors: Anchor[] }) {
+  return parse<{ anchors: Anchor[] }>(
+    await fetch(`${API_ORIGIN}/api/videos/${videoId}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function saveTarget(videoId: string, body: Schemas["TargetRequest"]) {
   return parse<Revision>(
     await fetch(`${API_ORIGIN}/api/videos/${videoId}/targets`, {

@@ -5,5 +5,8 @@ pydantic-settings==2.16.1
 python-multipart==0.0.32
 anthropic==2.3.0
 pillow==13.0.0
+numpy==2.5.4
+opencv-contrib-python-headless==5.0.0.93
+convex==0.8.1
 pytest==9.1.1
 httpx==0.28.1

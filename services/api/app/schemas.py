@@ -21,13 +21,20 @@ class Box(BaseModel):
 class AnchorIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     frame_id: str
-    state: Literal["box", "not_visible"]
+    state: Literal["located", "not_visible", "uncertain"]
+    source: Literal["manual", "estimated"] | None = None
     box: Box | None = None
+    method: str | None = Field(default=None, max_length=40)
+    reason: str | None = Field(default=None, max_length=200)
+    explicit: bool = False
 
     @model_validator(mode="after")
     def box_matches_state(self) -> "AnchorIn":
-        if self.state == "box" and self.box is None:
-            raise ValueError("a box is required when the target is visible")
+        if self.state == "located":
+            if self.box is None:
+                raise ValueError("a box is required when the target is located")
+            if self.source is None:
+                self.source = "manual"
         if self.state == "not_visible" and self.box is not None:
             raise ValueError("a not-visible frame cannot include a box")
         return self
@@ -42,11 +49,21 @@ class SampleRequest(BaseModel):
 class TargetRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     manifest_id: str
-    role: str = Field(default="fullback", max_length=40)
+    role: str = Field(default="", max_length=40)
     jersey_note: str = Field(default="", max_length=80)
     team_color_note: str = Field(default="", max_length=80)
-    identity_uncertain: bool = False
+    note: str = Field(default="", max_length=400)
     anchors: list[AnchorIn] = Field(min_length=1, max_length=24)
+
+
+class ProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    manifest_id: str
+    anchors: list[AnchorIn] = Field(min_length=1, max_length=24)
+
+
+class ProposalOut(BaseModel):
+    anchors: list[AnchorIn]
 
 
 class AnalysisRequest(BaseModel):
@@ -83,6 +100,12 @@ class IdentityStatus(str, Enum):
     not_visible = "not_visible"
 
 
+class ContinuityIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    frame_id: str
+    reason: str = Field(min_length=1, max_length=200)
+
+
 class ProviderObservation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     category: Category
@@ -94,6 +117,7 @@ class ProviderObservation(BaseModel):
     evidence_status: EvidenceStatus
     identity_status: IdentityStatus
     limitations: list[str] = Field(default_factory=list, max_length=6)
+    continuity_issues: list[ContinuityIssue] = Field(default_factory=list, max_length=8)
 
 
 class ResampleRequest(BaseModel):
@@ -143,6 +167,8 @@ class RevisionOut(BaseModel):
     team_color_note: str
     identity_uncertain: bool
     role: str
+    note: str
+    needs_review: list[str]
     created_at: str
 
 
@@ -171,8 +197,12 @@ class ObservationOut(BaseModel):
     evidence_status: str
     identity_status: str
     limitations: list[str]
+    continuity_issues: list[ContinuityIssue]
+    seek_ms: int
     review_status: str
     attribution_hold: bool
+    hold_reason: str
+    hold_frame_id: str | None = None
 
 
 class IssueOut(BaseModel):

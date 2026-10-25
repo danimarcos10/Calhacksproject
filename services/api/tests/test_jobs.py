@@ -68,12 +68,8 @@ def _prepare(tmp_path, name="jobs"):
     assert manifest.status_code == 200, manifest.text
     manifest = manifest.json()
     anchors = [
-        {"frame_id": frame["frame_id"], "state": "box", "box": {"x": 0.2, "y": 0.2, "w": 0.2, "h": 0.4}}
+        {"frame_id": frame["frame_id"], "state": "located", "source": "manual", "box": {"x": 0.2, "y": 0.2, "w": 0.2, "h": 0.4}}
         for frame in manifest["frames"][:1]
-    ]
-    anchors += [
-        {"frame_id": frame["frame_id"], "state": "not_visible"}
-        for frame in manifest["frames"][1:]
     ]
     revision = client.post(
         f"/api/videos/{video['id']}/targets",
@@ -82,7 +78,6 @@ def _prepare(tmp_path, name="jobs"):
             "role": "fullback",
             "jersey_note": "white 4",
             "team_color_note": "white",
-            "identity_uncertain": False,
             "anchors": anchors,
         },
     )
@@ -120,9 +115,8 @@ def test_synthetic_run_is_labeled_and_seekable(client, tmp_path):
         f"/api/videos/{video['id']}/targets",
         json={
             "manifest_id": manifest["id"],
-            "identity_uncertain": True,
             "anchors": [
-                {"frame_id": manifest["frames"][0]["frame_id"], "state": "box", "box": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.3}}
+                {"frame_id": manifest["frames"][0]["frame_id"], "state": "located", "source": "manual", "box": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.3}}
             ],
         },
     ).json()
@@ -176,7 +170,7 @@ def test_malformed_and_bad_citation_and_zero(tmp_path):
             json={
                 "manifest_id": manifest["id"],
                 "anchors": [
-                    {"frame_id": manifest["frames"][0]["frame_id"], "state": "box", "box": {"x": 0.25, "y": 0.2, "w": 0.2, "h": 0.3}}
+                    {"frame_id": manifest["frames"][0]["frame_id"], "state": "located", "source": "manual", "box": {"x": 0.25, "y": 0.2, "w": 0.2, "h": 0.3}}
                 ],
             },
         ).json()
@@ -211,7 +205,7 @@ def test_idempotency_cache_budget_and_stale_revision(tmp_path):
             json={
                 "manifest_id": manifest["id"],
                 "anchors": [
-                    {"frame_id": manifest["frames"][0]["frame_id"], "state": "box", "box": {"x": 0.3, "y": 0.2, "w": 0.2, "h": 0.3}}
+                    {"frame_id": manifest["frames"][0]["frame_id"], "state": "located", "source": "manual", "box": {"x": 0.3, "y": 0.2, "w": 0.2, "h": 0.3}}
                 ],
             },
         ).json()
@@ -243,7 +237,7 @@ def test_idempotency_cache_budget_and_stale_revision(tmp_path):
             json={
                 "manifest_id": manifest["id"],
                 "anchors": [
-                    {"frame_id": manifest["frames"][0]["frame_id"], "state": "box", "box": {"x": 0.4, "y": 0.2, "w": 0.2, "h": 0.3}}
+                    {"frame_id": manifest["frames"][0]["frame_id"], "state": "located", "source": "manual", "box": {"x": 0.4, "y": 0.2, "w": 0.2, "h": 0.3}}
                 ],
             },
         ).json()
