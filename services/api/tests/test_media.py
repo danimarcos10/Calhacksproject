@@ -93,7 +93,7 @@ def test_upload_rejects_bad_files_and_media_supports_range(client, tmp_path):
     assert ranged.headers["content-range"].startswith("bytes 0-99/")
     assert len(ranged.content) == 100
 
-    too_long_client, _app = make_client(tmp_path / "long", max_video_seconds=2)
+    too_long_client, _app = make_client(tmp_path / "long", max_video_seconds=2, scout_max_video_seconds=2)
     with too_long_client:
         with source.open("rb") as handle:
             too_long = too_long_client.post("/api/videos", files={"file": ("clip.mp4", handle, "video/mp4")})

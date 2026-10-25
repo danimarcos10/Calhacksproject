@@ -119,3 +119,8 @@ Fingerprint inputs using video hash, interval, anchor revision, sampler version,
 Poll roughly once per second while active, then stop at a terminal state. Label stages honestly; use an indeterminate indicator when no reliable percentage exists. Configure provider timeouts and at most two retries for transient errors, respecting Retry-After. Retries count toward job and session budgets.
 
 Set a proposed 120-second overall job deadline for the short demo input and tune it after measurement. An overdue job yields a visible timeout with retry or smaller-window options. Cancellation prevents later stages and stale commits; it may not cancel already-billed provider work.
+
+## M2 scout additions
+`POST /api/videos/{id}/scout` creates the Convex submission with the worker secret and returns the review key and code to the browser that started it. `GET /api/videos/{id}/people?t=` returns detected people for one click, or 503 when the detector is unavailable so the coach can draw one box.
+
+Convex still owns the review. A scout window has `kind: "scout"`. The worker writes progress and `cancelRequested` is coach-owned. `openRun`, `addObservations` and `closeRun` stream events. `correctionRequests` holds the one lost-track frame. The brief and inventory are derived in `convex/lib/scoutBrief.ts` from current events. SQLite owns `model_attempts` and `scout_cache` as well as media, jobs and the budget. A scout job is inserted as running so the short-window worker does not claim it.

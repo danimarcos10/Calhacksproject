@@ -111,3 +111,6 @@ Poll the job. Show stage labels tied to real work: validating, sampling, analyzi
 Start from upload, not an already-open result page. Run one real clip, click every returned evidence card, and record the actual elapsed processing time. Try one ambiguous window. Save the real successful response for a labeled replay mode. Write down the exact next improvement before showing a mentor.
 
 If time runs over, simplify layout and manual controls first. Do not remove source validation or hide errors. A functioning unattractive evidence loop is a more useful first prototype than a polished profile filled with invented numbers.
+
+## M2 status
+Automatic scouting is the current journey. The implementation is the track, candidate, inspect and review path in `services/api/app/scout` and `/scout`. The acceptance run on several minutes of continuous play has not happened. The stadium result is an empty brief after a lost track, which does not satisfy "a useful supported finding." Scholarship search, outreach and extra dashboards stay out.

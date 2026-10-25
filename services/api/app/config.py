@@ -18,8 +18,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/secondlook.db"
     app_origin: str = "http://localhost:3000"
     api_origin: str = "http://localhost:8000"
-    max_upload_mb: int = 200
+    max_upload_mb: int = 400
     max_video_seconds: int = 90
+    scout_max_video_seconds: int = 330
+    scout_max_clips: int = 6
     min_video_seconds: int = 6
     max_window_seconds: int = 8
     min_window_seconds: int = 6
@@ -37,6 +39,14 @@ class Settings(BaseSettings):
     enable_jev: bool = False
     evidence_provider: str = "anthropic"
     allow_replay: bool = False
+    apify_token: str = ""
+    apify_timeout_seconds: float = 45
+    smtp_user: str = ""
+    smtp_app_password: str = ""
+    mail_from_name: str = "SecondLook"
+    mail_test_to: str = ""
+    mail_live: bool = False
+    outreach_live_cap: int = 5
     convex_url: str = ""
     convex_worker_secret: str = ""
     convex_worker_id: str = "laptop-worker"

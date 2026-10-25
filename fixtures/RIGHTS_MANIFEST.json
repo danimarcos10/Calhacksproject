@@ -41,6 +41,60 @@
         "end_ms": 7000,
         "target": "Solid-blue player who starts isolated at the right edge and runs left toward the penalty area during the set piece. No role is assumed. The number is not readable at this distance."
       }
+    },
+    {
+      "local_filename": "data/footage/utrecht-ajax-2018-12-23-720p.webm",
+      "source": "https://commons.wikimedia.org/wiki/File:Utrecht_v_Ajax_Dec_2018.webm",
+      "youtube": "https://www.youtube.com/watch?v=qB0IeospJxg",
+      "retrieved": "2026-10-25",
+      "license": "CC BY 3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0",
+      "author": "FCUFAN",
+      "title": "Utrecht v Ajax, 23 December 2018, fan recording",
+      "transformation": "Downloaded the Commons file. Not trimmed, because a pitch-colour scan found only about 22 seconds of continuous play (119–141 s). The rest is crowd, smoke and stadium.",
+      "permission_and_permitted_use": "CC BY 3.0. The Commons page still asks for a licence review. This project does not publish the file. It is not the 2–5 minute proof sequence.",
+      "recorded_by": "FCUFAN",
+      "adult_or_required_permission_confirmed": "professional senior match per title, not individually verified",
+      "can_send_frames_to_provider": false,
+      "can_show_at_demo": false,
+      "can_publish": false,
+      "review_window": null
+    },
+    {
+      "local_filename": "data/footage/soccertrack-v2-118577.mp4",
+      "source_filename": "mot/clips/118577.mp4",
+      "source": "https://huggingface.co/datasets/atomscott/soccertrack-v2",
+      "retrieved": "2026-10-25",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "author": "Atom Scott",
+      "title": "SoccerTrack v2 match 118577, four-minute challenge clip",
+      "transformation": "The dataset clip is 240.0 s, 4096x1080, 25 fps, with no broadcast replay cut. The local file keeps the first 180 s, drops audio, and scales to 960x254 so it fits the upload limit. The scout pipeline would scale a wider frame to this width anyway.",
+      "permission_and_permitted_use": "CC BY 4.0. The dataset is gated. This project does not publish the file. Attribution: Atom Scott, SoccerTrack v2.",
+      "recorded_by": "SoccerTrack / Atom Scott",
+      "adult_or_required_permission_confirmed": "university match, players appear adult, not individually verified",
+      "can_send_frames_to_provider": true,
+      "can_show_at_demo": true,
+      "can_publish": false,
+      "review_window": {
+        "start_ms": 0,
+        "end_ms": 180000,
+        "target": "A red player in the left-side group, detected at about 8.9 s. No role is assumed. The number is readable on a zoom of the source and was not used as an identity."
+      }
+    },
+    {
+      "local_filename": "data/footage/dfl-0bfacc_0.mp4",
+      "source": "https://github.com/roboflow/sports/blob/main/examples/soccer/setup.sh",
+      "retrieved": "2026-10-25",
+      "license": "unconfirmed",
+      "author": "unconfirmed",
+      "title": "DFL / Roboflow sports sample 0bfacc_0",
+      "transformation": "Downloaded unchanged from the Google Drive link in the Roboflow sports soccer example.",
+      "permission_and_permitted_use": "Kaggle DFL competition data, terms unconfirmed. This project does not publish the file.",
+      "can_send_frames_to_provider": true,
+      "can_show_at_demo": true,
+      "can_publish": false,
+      "review_window": null
     }
   ]
 }

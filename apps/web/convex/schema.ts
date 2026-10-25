@@ -62,6 +62,7 @@ export default defineSchema({
     link: v.object({ statement: v.string(), assertedBy: v.string(), assertedAt: v.number() }),
     currentRevision: v.number(),
     spend: v.optional(spend),
+    kind: v.optional(v.union(v.literal("window"), v.literal("scout"))),
   })
     .index("by_submission", ["submissionId", "order"])
     .index("by_manifest", ["manifestKey"]),
@@ -102,6 +103,22 @@ export default defineSchema({
     requestedBy: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
+    kind: v.optional(v.union(v.literal("window"), v.literal("scout"))),
+    cancelRequested: v.optional(v.boolean()),
+    progress: v.optional(
+      v.object({
+        phase: v.string(),
+        chunksDone: v.optional(v.number()),
+        chunksTotal: v.optional(v.number()),
+        candidates: v.optional(v.number()),
+        inspected: v.optional(v.number()),
+        trackedMs: v.optional(v.number()),
+        lostMs: v.optional(v.number()),
+        ballUnseenMs: v.optional(v.number()),
+        spendUsd: v.optional(v.number()),
+        message: v.optional(v.string()),
+      }),
+    ),
   })
     .index("by_status", ["status", "createdAt"])
     .index("by_window", ["windowId", "createdAt"])
@@ -131,6 +148,10 @@ export default defineSchema({
     noObservationReason: v.union(v.string(), v.null()),
     createdAt: v.string(),
     publishedAt: v.number(),
+    state: v.optional(v.union(v.literal("running"), v.literal("succeeded"), v.literal("partial"), v.literal("cancelled"))),
+    coverageNote: v.optional(v.string()),
+    narrative: v.optional(v.string()),
+    trackedMs: v.optional(v.number()),
   })
     .index("by_window", ["windowId", "publishedAt"])
     .index("by_submission", ["submissionId", "publishedAt"])
@@ -156,6 +177,8 @@ export default defineSchema({
     attributionHold: v.boolean(),
     holdReason: v.union(v.string(), v.null()),
     holdFrameId: v.union(v.string(), v.null()),
+    action: v.optional(v.string()),
+    outcomeDetail: v.optional(v.string()),
   })
     .index("by_run", ["runId"])
     .index("by_submission", ["submissionId"]),
@@ -189,4 +212,48 @@ export default defineSchema({
     reviewer: v.string(),
     createdAt: v.number(),
   }).index("by_submission", ["submissionId", "createdAt"]),
+
+  // Append-only. The newest profile for a submission is the current one.
+  profiles: defineTable({
+    submissionId: v.id("submissions"),
+    key: v.string(),
+    eventIds: v.array(v.string()),
+    summary: v.string(),
+    qualities: v.array(v.object({ text: v.string(), eventIds: v.array(v.string()) })),
+    gaps: v.array(v.string()),
+    ability: v.optional(
+      v.object({
+        overall: v.number(),
+        dimensions: v.array(
+          v.object({
+            name: v.union(v.literal("ball_security"), v.literal("passing"), v.literal("carrying"), v.literal("involvement")),
+            score: v.number(),
+            reason: v.string(),
+            eventIds: v.array(v.string()),
+          }),
+        ),
+      }),
+    ),
+    model: v.string(),
+    promptVersion: v.string(),
+    costUsd: v.union(v.number(), v.null()),
+    inputTokens: v.union(v.number(), v.null()),
+    outputTokens: v.union(v.number(), v.null()),
+    cacheStatus: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_submission", ["submissionId", "createdAt"])
+    .index("by_submission_key", ["submissionId", "key"]),
+
+  // Written by the worker when a track is lost. The coach resolves it with a new revision.
+  correctionRequests: defineTable({
+    submissionId: v.id("submissions"),
+    windowId: v.id("windows"),
+    revisionNumber: v.number(),
+    tMs: v.number(),
+    frameId: v.string(),
+    reason: v.string(),
+    boxes: v.array(v.object({ trackId: v.optional(v.number()), box, confidence: v.number() })),
+    createdAt: v.number(),
+  }).index("by_window", ["windowId", "createdAt"]),
 });

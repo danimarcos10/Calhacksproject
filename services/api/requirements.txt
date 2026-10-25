@@ -7,6 +7,13 @@ anthropic==2.3.0
 pillow==13.0.0
 numpy==2.5.4
 opencv-contrib-python-headless==5.0.0.93
+# CUDA 12.1 wheels. The index is only for these two; the rest install from PyPI.
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.5.1+cu121
+torchvision==0.20.1+cu121
+ultralytics==8.4.188
+lap==0.5.13
+# Keep opencv-contrib-python-headless. ultralytics asks for opencv-python, and that build replaces this one and drops CSRT.
 convex==0.8.1
 pytest==9.1.1
 httpx==0.28.1

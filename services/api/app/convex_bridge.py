@@ -22,13 +22,45 @@ log = logging.getLogger("secondlook.convex")
 TERMINAL = {"succeeded", "failed", "interrupted", "cancelled"}
 
 
-def make_client(url: str):
-    from convex import ConvexClient
+_call_lock = threading.Lock()
 
-    return ConvexClient(url)
+
+class _BoundedClient:
+    """HTTP Convex client. Each call stops after 8 seconds and does not touch uvicorn's loop."""
+
+    def __init__(self, url: str):
+        import requests
+        from convex.http_client import ConvexHttpClient
+
+        self._requests = requests
+        self._inner = ConvexHttpClient(url)
+
+    def mutation(self, name: str, args: dict | None = None):
+        original = self._requests.post
+
+        def post(url, **kwargs):
+            kwargs["timeout"] = 8
+            return original(url, **kwargs)
+
+        with _call_lock:
+            self._requests.post = post
+            try:
+                return self._inner.mutation(name, args)
+            except self._requests.Timeout as exc:
+                raise TimeoutError("convex call timed out") from exc
+            finally:
+                self._requests.post = original
+
+
+def make_client(url: str):
+    return _BoundedClient(url)
 
 
 def bridge_loop(app, stop: threading.Event) -> None:
+    import asyncio
+
+    # This thread must not borrow uvicorn's loop. A Convex call on that loop stalls every HTTP request.
+    asyncio.set_event_loop(asyncio.new_event_loop())
     settings = app.state.settings
     try:
         client = make_client(settings.convex_url)
@@ -42,6 +74,10 @@ def bridge_loop(app, stop: threading.Event) -> None:
                 "worker:claimNext",
                 {"secret": settings.convex_worker_secret, "workerId": settings.convex_worker_id},
             )
+        except TimeoutError:
+            log.warning("convex claim timed out")
+            stop.wait(5)
+            continue
         except Exception as exc:
             log.warning("convex claim failed type=%s", type(exc).__name__)
             stop.wait(5)
@@ -92,6 +128,11 @@ def ensure_revision(db: Database, manifest: dict, revision: dict) -> dict:
 
 
 def handle_claim(app, client, claim: dict, stop: threading.Event) -> None:
+    if claim.get("kind") == "scout":
+        from app.scout.service import execute
+
+        execute(app, client, claim, stop)
+        return
     db: Database = app.state.db
     settings = app.state.settings
     secret = settings.convex_worker_secret

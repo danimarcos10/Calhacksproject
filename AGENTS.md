@@ -5,7 +5,7 @@ Read HACK.md and docs/STATE.md at the start of a session. Then read only the doc
 Goal: a coach reviews source-linked football observations, corrects attribution, and sees current evidence coverage. Ship the real M0 loop first, then follow the committed milestones.
 
 Invariants:
-- Source video time and frame references must be validated. Never invent statistics, ability scores or scholarship probabilities.
+- Source video time and frame references must be validated. An ability estimate is AI-written, labelled unverified, cites events, and is withheld below evidence confidence 40. Never invent statistics or scholarship probabilities.
 - Every claim remains candidate until reviewed. Corrections create revisions and invalidate dependent claims.
 - Missing evidence is not a player's weakness. Ambiguous identity requires abstention or correction.
 - No silent mock fallback. Label cached, replayed, manual and synthetic material.

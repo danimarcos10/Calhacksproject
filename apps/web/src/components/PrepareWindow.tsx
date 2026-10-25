@@ -8,6 +8,8 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { AnchorCard, CONFIRMED_ESTIMATE, anchorFrom, draftFrom, type Draft, type Mark } from "@/components/AnchorEditor";
 import { type Anchor, type Revision, type VideoDetail, formatMs, getVideo, proposeLocations } from "@/lib/api";
+import { useScreenScope } from "@/components/Shell";
+import { useWorking } from "@/components/Look";
 import { codeFor, errorText, reviewerName } from "@/lib/reviewAccess";
 
 type ConvexAnchor = Doc<"revisions">["anchors"][number];
@@ -65,6 +67,7 @@ export function PrepareWindow({ submissionKey, order }: { submissionKey: string;
   const [code, setCode] = useState<string | null | undefined>(undefined);
   useEffect(() => setCode(codeFor(submissionKey)), [submissionKey]);
   const review = useQuery(api.review.get, code ? { key: submissionKey, code } : "skip");
+  useScreenScope(review?.submission.player ?? "No submission open");
   const saveRevision = useMutation(api.review.saveRevision);
   const queueAnalysis = useMutation(api.review.queueAnalysis);
 
@@ -78,6 +81,7 @@ export function PrepareWindow({ submissionKey, order }: { submissionKey: string;
   const [teamColor, setTeamColor] = useState("");
   const [offered, setOffered] = useState(0);
   const [busy, setBusy] = useState("");
+  useWorking(busy !== "");
   const [message, setMessage] = useState("");
   const [savedNumber, setSavedNumber] = useState<number | null>(null);
 
@@ -104,16 +108,31 @@ export function PrepareWindow({ submissionKey, order }: { submissionKey: string;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manifest, window?.currentRevision]);
 
-  if (code === undefined) return <main className="app"><p className="meta">Opening…</p></main>;
-  if (!code) {
+  if (code === undefined) {
     return (
-      <main className="app">
-        <p className="error">Open the review link for this submission first, so this browser has its review code.</p>
-        <Link href="/review">Review inbox</Link>
+      <main className="screen">
+        <div className="skeleton skel-title" />
+        <div className="skeleton skel-block" />
       </main>
     );
   }
-  if (!review || !window) return <main className="app"><p className="meta">Loading the window…</p></main>;
+  if (!code) {
+    return (
+      <main className="screen">
+        <h1>Prepare window</h1>
+        <p className="error">Open the review link for this submission first, so this browser has its review code.</p>
+        <p className="meta"><Link href="/review">Review inbox</Link></p>
+      </main>
+    );
+  }
+  if (!review || !window) {
+    return (
+      <main className="screen">
+        <div className="skeleton skel-title" />
+        <div className="skeleton skel-block" />
+      </main>
+    );
+  }
 
   const conflict = base !== null && window.currentRevision !== base;
   const access = { key: submissionKey, code };
@@ -224,16 +243,18 @@ export function PrepareWindow({ submissionKey, order }: { submissionKey: string;
   }
 
   return (
-    <main className="app">
-      <header>
-        <p className="meta">
-          <Link href={`/review/${submissionKey}`}>Back to the review</Link>
-        </p>
-        <h1>
-          {mode === "correction" ? "Correct the player" : "Prepare"}: window {window.order} ({formatMs(window.startMs)}–{formatMs(window.endMs)})
-        </h1>
-        <p>{review.submission.player} · {review.submission.title}</p>
-        <p className="meta">Linked to this player by {window.link.assertedBy}: “{window.link.statement}”</p>
+    <main className="screen">
+      <header className="title-row">
+        <div>
+          <h1>{mode === "correction" ? "Correct the player" : "Prepare window"}</h1>
+          <p className="sub">
+            Window {window.order} · {formatMs(window.startMs)}–{formatMs(window.endMs)} · {review.submission.player} · {review.submission.title}
+          </p>
+          <p className="meta">
+            <Link href={`/review/${submissionKey}`}>Back to the review</Link>
+            {" · "}Linked to this player by {window.link.assertedBy}: “{window.link.statement}”
+          </p>
+        </div>
       </header>
       {mode === "correction" && (
         <div className="banner" role="note">

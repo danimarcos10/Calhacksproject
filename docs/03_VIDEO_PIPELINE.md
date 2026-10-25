@@ -47,6 +47,11 @@ For an oriented image W by H in a canvas Cw by Ch using contain-fit, set scale =
 
 Apply the same orientation before selection, tracking and model input. Test portrait rotation and browser resize. The stored rectangle must survive a round trip from normalized coordinates back to the rendered image without moving to another player.
 
+## M2: track, then inspect candidates
+Scout does not sample the whole clip for Claude. Frames are read from an ffmpeg pipe at 10 fps with source presentation timestamps, in 15-second chunks with 1 second of overlap. YOLO26n and BoT-SORT store person boxes only. A second pass looks for the ball in a crop around the followed player. Identity starts from one box. A camera cut ends it. If the player stays lost for 3 seconds, the run stops and asks for one click. A nearby ball is a candidate only when it is near the feet in at least two of three frames. Those short sequences, not the whole video, go to Claude under prompt `scout-v1` and schema 2.0.
+
+The 20-second stadium run locked the player and then lost him. It found no candidate, so it made no model call.
+
 ## Optional SAM 2.1 path
 M0.5 did not install SAM 2 or torch. The shipped tracker is the CPU CSRT proposal pass, and estimated boxes stay unverified until the user saves them. This section remains a later option for a machine with a usable GPU.
 

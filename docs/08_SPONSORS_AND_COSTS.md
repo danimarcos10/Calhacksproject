@@ -74,7 +74,7 @@ Devpost paragraph: *SecondLook keeps the coach review in Convex. Model observati
 | --- | --- | --- |
 | Meta: Bringing People Closer Together with AI | A working coach-player feedback loop with essential AI; SAM alone is not the theme | Conditional Round 2 invitation, travel/accommodation and swag. Pursue only if human connection is clear. |
 | Elastic: Agent Builder on Serverless | An actual Serverless Agent Builder tool/agent retrieving current evidence with citations | Quest 3S first, Bose QuietComfort second. Useful optional evidence search; not P0. |
-| Apify: Best Use / Best Actor | A working public-data Actor or meaningful Actor integration | $2,000/$1,000/$800/$400/$400; separate $400 Actor award. Opportunity discovery is a separate feature: defer. |
+| Apify: Best Use / Best Actor | Live public pathway pages on the scout review, then a note the player sends | $2,000/$1,000/$800/$400/$400; separate $400 Actor award. The handoff below is the integration. A custom Actor is not part of this build. |
 | Bright Data: public web data app | Live public data essential to core; resilient real demo | Credits + Amazon cards. Poor fit for a private video reviewer; do not bolt on scraping. |
 | Convex: Best Use | Meaningful reactive backend | Snapshot said EP-133 K.O. II + ESP32-S3 display board; the Devpost listing read 2026-10-25 says "$5,000 cash to the winning team". Unresolved; confirm with organizers. Adopted as a priority on 2026-10-25; see "Convex: Best Use (implemented)" below. |
 | SpacetimeDB: Best Use | Meaningful live shared state / sync | $2,048/$1,024/$512 cash. Multi-reviewer sync is optional, not needed for this demo. |
@@ -85,10 +85,10 @@ Track facts above come from the supplied Hacker Guide/briefing and current spons
 ## If Elastic is already available
 Index only current evidence records with player ID, role, category, source range, review state and observation ID. Expose bounded tools such as find_evidence and find_gaps through Agent Builder. Filter rejected/stale records out of current answers. Use a query like “show reviewed defending examples for these submissions,” then return playable citations. An ordinary Elasticsearch index by itself does not satisfy an Agent Builder requirement. [S16]
 
-## If exploring opportunity discovery later
-Use Apify or Bright Data for public, permitted opportunity pages with source URL, retrieved_at, deadline and verification status. Matching eligibility and scholarship amounts is a separate accuracy problem. Keep it outside the final video-review journey unless the core is complete unusually early.
+## Apify handoff (implemented)
+On the scout review, the player confirms position, graduation year, region, and aim. `POST /api/reviews/{id}/opportunities` runs `apify/google-search-scraper` for one page of results, then `apify/website-content-crawler` on at most three public URLs. Claude writes card fields, and the server drops any deadline, contact, or sentence that is not in the page text, the typed facts, or a finding already on the brief. An empty brief still returns cards, and the draft says the clip does not yet show a ball action. The player copies the note or opens a `mailto:` only when that address was on the page. SecondLook does not send mail. A repeat of the same facts and findings reuses the stored read and is labelled with its original `retrieved_at`. Lead enrichment and personal-profile hosts are not requested.
 
-Do not add both web-data providers. Bright Data's current rules disqualify login/paywall scraping, non-public personal data and mocked/hardcoded demo data. A replay fallback suitable for the core product does not satisfy that track's live-data requirement. [S18]
+This is not an eligibility decision, a scholarship amount, or an agent search. A saved payload test covers the grounding rules. Checked 2026-10-25: `APIFY_TOKEN` is empty on this machine, so no live actor run was made. Add the token and press "Find places that fit" for the track proof. Bright Data stays unused. Its rules disqualify login/paywall scraping, non-public personal data, and mocked demo data. [S18]
 
 ---
 
@@ -99,7 +99,7 @@ No credits were redeemed while preparing this package. “Verified offer” mean
 | Provider | Offer | Claim route and practical use |
 | --- | --- | --- |
 | Claude API | $50 per hacker for the weekend | Event offer link [S04]. Highest priority: core visual analysis. Contact Arinze in the credit thread for approval problems. |
-| Apify | $200 credits | Coupon APIFY_CAL_HACKS; signup link [S17]. Existing accounts: Billing > Subscription > Promo Code. Only useful if you build public-data work. |
+| Apify | $200 credits | Coupon APIFY_CAL_HACKS; signup link [S17]. Existing accounts: Billing > Subscription > Promo Code. Used for the public pathway handoff. The token stays in `.env` as `APIFY_TOKEN`. |
 | Bright Data | $300 credits | Event signup URL [S18]. Core product does not need it; avoid spending setup time solely to collect it. |
 | Mana | $150 credits per hacker | Starter pack [S19], access code advertised as CALHACKS. Separate builder/platform balance, not Cursor credit. |
 | Azure for Students | $100 for eligible students | Standard student offer [S15], not an additional event grant. Use only after eligibility and service access are verified. |
@@ -140,6 +140,9 @@ Fetch.ai's latest sponsor post in the supplied briefing lists $1,250/$750/$500 p
 
 ## Poor fits for this product
 Hyphenate finance automation, Visa shopping, Coinbase payments/trading, Capital One banking, CRS credit/identity, Atlassian workplace apps, and space-themed challenges would require a different core product. Factory requires Droid doing real work inside the running application; merely using it to write code is insufficient. Fetch.ai requires Agentverse/Agent Chat Protocol/ASI:One discoverability. CREAO requires a core CREAO agent and submission evidence. Do not add them as cosmetic dependencies.
+
+## M2 detection licence and spend
+Ultralytics 8.4.188 is AGPL-3.0 and runs locally with torch 2.5.1+cu121. It is not a hosted model. The stadium scout made no Claude call. Project spend remains $0.1805 over 6 reconciled calls. A scout analysis is capped by the existing $1 job budget and the $15 app budget.
 
 ## A sponsor decision rule
 Keep a new integration only if you can identify the exact user-visible improvement, the requirement it satisfies, and a working demo within a strict timebox. With fewer than six hours left, the only defensible additions are fixes required to finish the committed journey. Prize totals are not expected winnings and should not determine architecture by themselves.

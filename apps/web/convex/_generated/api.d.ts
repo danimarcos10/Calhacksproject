@@ -9,7 +9,9 @@
  */
 
 import type * as lib_access from "../lib/access.js";
+import type * as lib_confidence from "../lib/confidence.js";
 import type * as lib_intervals from "../lib/intervals.js";
+import type * as lib_scoutBrief from "../lib/scoutBrief.js";
 import type * as lib_status from "../lib/status.js";
 import type * as lib_summary from "../lib/summary.js";
 import type * as review from "../review.js";
@@ -23,7 +25,9 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "lib/access": typeof lib_access;
+  "lib/confidence": typeof lib_confidence;
   "lib/intervals": typeof lib_intervals;
+  "lib/scoutBrief": typeof lib_scoutBrief;
   "lib/status": typeof lib_status;
   "lib/summary": typeof lib_summary;
   review: typeof review;

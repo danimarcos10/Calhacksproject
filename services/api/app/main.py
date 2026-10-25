@@ -1,5 +1,7 @@
 import asyncio
+import gzip
 import hashlib
+import json
 import logging
 import re
 import shutil
@@ -29,6 +31,20 @@ from app.schemas import (
     ProposalOut,
     ProposalRequest,
     SampleRequest,
+    OpportunityIn,
+    OpportunityOut,
+    ProgramsIn,
+    ProgramsOut,
+    ReachIn,
+    ReachOut,
+    SendIn,
+    SendOut,
+    FindPlayerIn,
+    FindPlayerOut,
+    StickIn,
+    StickOut,
+    ScoutBatchIn,
+    ScoutStartIn,
     TargetRequest,
     VideoOut,
 )
@@ -160,7 +176,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 probe_video,
                 incoming,
                 min_seconds=settings.min_video_seconds,
-                max_seconds=settings.max_video_seconds,
+                max_seconds=max(settings.max_video_seconds, settings.scout_max_video_seconds),
             )
             video_id = new_id("vid")
             folder = settings.data_path / "videos" / video_id
@@ -197,6 +213,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "created_at": utcnow(),
                 }
             )
+            from app.scout.roboflow import start_tracking
+
+            start_tracking(request.app, video_id)
         except AppError:
             _cleanup(incoming, folder if "original" not in locals() else None)
             if incoming is None and folder and not db.get_video(locals().get("video_id", "")):
@@ -218,6 +237,175 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise AppError("not_found", "That clip was not found.", 404)
         return _video_payload(request.app.state.db, video_id)
 
+    @app.get("/api/videos/{video_id}/people")
+    def people(video_id: str, t: int, request: Request):
+        _require_id(video_id, "vid")
+        video = request.app.state.db.get_video(video_id)
+        if video is None:
+            raise AppError("not_found", "That clip was not found.", 404)
+        if t < 0 or t > int(video["duration_ms"]):
+            raise AppError("window_outside", "That time is outside the clip.", 400)
+        dest = settings.data_path / "tmp" / f"{video_id}-{t}.jpg"
+        try:
+            from app.scout.service import grab_jpeg
+            from app.scout.yolo_tracker import YoloTracker
+
+            grab_jpeg(_under(settings.data_path, video["original_path"]), t, dest)
+            tracker = getattr(request.app.state, "yolo", None)
+            if tracker is None:
+                tracker = YoloTracker()
+                request.app.state.yolo = tracker
+            import cv2
+
+            image = cv2.imread(str(dest))
+            if image is None:
+                raise AppError("internal_error", "That frame could not be read.", 400)
+            found = tracker.detect_people(image)
+        except AppError:
+            raise
+        except Exception as exc:
+            log.warning("people detection unavailable type=%s", type(exc).__name__)
+            raise AppError("tracker_unavailable", "Automatic player detection is not available. Draw one box instead.", 503) from None
+        return {
+            "t_ms": t,
+            "people": [{"box": {"x": person.box[0], "y": person.box[1], "w": person.box[2], "h": person.box[3]}, "confidence": person.confidence} for person in found],
+        }
+
+    @app.post("/api/videos/{video_id}/scout", status_code=201)
+    def start_scout(video_id: str, parsed: ScoutStartIn, request: Request):
+        _require_id(video_id, "vid")
+        db: Database = request.app.state.db
+        video = db.get_video(video_id)
+        if video is None:
+            raise AppError("not_found", "That clip was not found.", 404)
+        if parsed.t_ms > int(video["duration_ms"]):
+            raise AppError("window_outside", "That time is outside the clip.", 400)
+        if not settings.convex_url or not settings.convex_worker_secret:
+            raise AppError("provider_not_configured", "The review service is not connected on this worker.", 503)
+        from app.convex_bridge import make_client
+        from app.scout.roboflow import read_progress
+        from app.scout.service import start_submission
+
+        progress = read_progress(settings.data_path, video["sha256"])
+        if progress.get("state") != "succeeded":
+            raise AppError("tracker_unavailable", "Player tracking is still running. Wait until the boxes appear, then click the player.", 409)
+
+        try:
+            started = start_submission(
+                db,
+                settings,
+                make_client(settings.convex_url),
+                video=video,
+                t_ms=parsed.t_ms,
+                box=parsed.box.model_dump(),
+                player_name=parsed.player_name,
+            )
+        except Exception as exc:
+            log.warning("scout start failed type=%s", type(exc).__name__)
+            raise AppError("internal_error", "The scouting review could not be opened. Try again.", 400) from None
+        return started
+
+    @app.post("/api/scout", status_code=201)
+    def start_scout_batch(parsed: ScoutBatchIn, request: Request):
+        if len(parsed.clips) > settings.scout_max_clips:
+            raise AppError("invalid_request", f"Choose at most {settings.scout_max_clips} clips.", 400)
+        if not settings.convex_url or not settings.convex_worker_secret:
+            raise AppError("provider_not_configured", "The review service is not connected on this worker.", 503)
+        db: Database = request.app.state.db
+        from app.convex_bridge import make_client
+        from app.scout.roboflow import read_progress
+        from app.scout.service import start_batch
+
+        prepared = []
+        for clip in parsed.clips:
+            _require_id(clip.video_id, "vid")
+            video = db.get_video(clip.video_id)
+            if video is None:
+                raise AppError("not_found", "One of those clips was not found.", 404)
+            duration = int(video["duration_ms"])
+            marks = [{"t_ms": mark.t_ms, "box": mark.box.model_dump()} for mark in clip.marks]
+            if not marks:
+                marks = [{"t_ms": clip.t_ms, "box": clip.box.model_dump()}]
+            if any(mark["t_ms"] > duration for mark in marks):
+                raise AppError("window_outside", "A click is outside its clip.", 400)
+            progress = read_progress(settings.data_path, video["sha256"])
+            if progress.get("state") != "succeeded":
+                raise AppError("tracker_unavailable", "Player tracking is still running on one of the clips.", 409)
+            marks.sort(key=lambda mark: mark["t_ms"])
+            prepared.append({"video": video, "t_ms": marks[0]["t_ms"], "box": marks[0]["box"], "marks": marks})
+        try:
+            return start_batch(
+                db,
+                settings,
+                make_client(settings.convex_url),
+                player_name=parsed.player_name,
+                clips=prepared,
+            )
+        except Exception as exc:
+            log.warning("scout batch failed type=%s", type(exc).__name__)
+            raise AppError("internal_error", "The scouting review could not be opened. Try again.", 400) from None
+
+    @app.post("/api/videos/{video_id}/find-player", response_model=FindPlayerOut)
+    def find_player(video_id: str, parsed: FindPlayerIn, request: Request):
+        _require_id(video_id, "vid")
+        db: Database = request.app.state.db
+        video = db.get_video(video_id)
+        if video is None:
+            raise AppError("not_found", "That clip was not found.", 404)
+        from app.scout.describe import locate_player
+        from app.scout.roboflow import load_tracks, read_progress
+
+        if read_progress(settings.data_path, video["sha256"]).get("state") != "succeeded":
+            raise AppError("tracker_unavailable", "Player tracking has not finished for this clip.", 409)
+        document = load_tracks(settings.data_path, video["sha256"])
+        if document is None:
+            raise AppError("tracker_unavailable", "Player tracking has not finished for this clip.", 409)
+        return locate_player(settings, settings.data_path / video["original_path"], document["frames"], parsed.description)
+
+    @app.post("/api/videos/{video_id}/stick", response_model=StickOut)
+    def stick_player(video_id: str, parsed: StickIn, request: Request):
+        _require_id(video_id, "vid")
+        video = request.app.state.db.get_video(video_id)
+        if video is None:
+            raise AppError("not_found", "That clip was not found.", 404)
+        if parsed.t_ms > int(video["duration_ms"]):
+            raise AppError("window_outside", "That time is outside the clip.", 400)
+        from app.scout.goal import scorer_path
+        from app.scout.roboflow import load_tracks
+
+        document = load_tracks(settings.data_path, video["sha256"])
+        if document is None:
+            raise AppError("tracker_unavailable", "Player tracking has not finished for this clip.", 409)
+        path = scorer_path(document["frames"], parsed.t_ms, (parsed.box.x, parsed.box.y, parsed.box.w, parsed.box.h))
+        span = path[-1]["t"] - path[0]["t"] if len(path) >= 2 else 0
+        if span < 800:
+            return {"frames": path, "message": "Nobody near the goal stayed with the ball. Click yourself again in the moment the ring is on you."}
+        return {"frames": path, "message": f"Locked to your click. Following the player nearest the goal and the ball for {span / 1000:.1f}s. Check the ring."}
+
+    @app.post("/api/reviews/{review_id}/programs", response_model=ProgramsOut)
+    def programs(review_id: str, parsed: ProgramsIn, request: Request):
+        from app.opportunities import list_programs
+
+        return list_programs(request.app.state.db, settings, review_id, parsed)
+
+    @app.post("/api/reviews/{review_id}/opportunities", response_model=OpportunityOut)
+    def opportunities(review_id: str, parsed: OpportunityIn, request: Request):
+        from app.opportunities import find_coaches
+
+        return find_coaches(request.app.state.db, settings, review_id, parsed)
+
+    @app.post("/api/reviews/{review_id}/outreach", response_model=SendOut)
+    def outreach(review_id: str, parsed: SendIn, request: Request):
+        from app.opportunities import send_outreach
+
+        return send_outreach(request.app.state.db, settings, review_id, parsed)
+
+    @app.post("/api/reviews/{review_id}/reach-plan", response_model=ReachOut)
+    def reach(review_id: str, parsed: ReachIn, request: Request):
+        from app.opportunities import reach_plan
+
+        return reach_plan(request.app.state.db, settings, review_id, parsed)
+
     @app.get("/api/videos/{video_id}/media")
     def media(video_id: str, request: Request):
         _require_id(video_id, "vid")
@@ -225,6 +413,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if video is None:
             raise AppError("not_found", "That clip was not found.", 404)
         return _ranged(request, _under(settings.data_path, video["playback_path"]), "video/mp4")
+
+    @app.get("/api/videos/{video_id}/tracks")
+    def tracks(video_id: str, request: Request):
+        _require_id(video_id, "vid")
+        video = request.app.state.db.get_video(video_id)
+        if video is None:
+            raise AppError("not_found", "That clip was not found.", 404)
+        from app.scout.roboflow import load_tracks
+
+        document = load_tracks(settings.data_path, video["sha256"])
+        if document is None:
+            raise AppError("not_found", "Player tracking has not finished for this clip.", 404)
+        payload = gzip.compress(json.dumps(document).encode())
+        return Response(content=payload, media_type="application/json", headers={"Content-Encoding": "gzip"})
 
     @app.post("/api/videos/{video_id}/samples", response_model=ManifestOut)
     async def samples(video_id: str, parsed: SampleRequest, request: Request):
@@ -594,7 +796,16 @@ def _video_payload(db: Database, video_id: str) -> dict:
         "rights_note": video["rights_note"],
         "manifests": [_manifest_payload(row) for row in db.manifests_for_video(video_id)],
         "revisions": [_revision_payload(row) for row in db.revisions_for_video(video_id)],
+        "tracking": _tracking_payload(db, video),
     }
+
+
+def _tracking_payload(db: Database, video: dict) -> dict:
+    del db
+    from app.config import Settings
+    from app.scout.roboflow import read_progress
+
+    return read_progress(Settings().data_path, video["sha256"])
 
 
 def _manifest_payload(row: dict | None) -> dict | None:
@@ -610,9 +821,9 @@ def _manifest_payload(row: dict | None) -> dict | None:
             {
                 "frame_id": frame["frame_id"],
                 "source_t_ms": frame["source_t_ms"],
-                "derivative_t_ms": frame["derivative_t_ms"],
-                "width": frame["width"],
-                "height": frame["height"],
+                "derivative_t_ms": frame.get("derivative_t_ms", frame["source_t_ms"]),
+                "width": frame.get("width") or 0,
+                "height": frame.get("height") or 0,
                 "url": f"/api/videos/{row['video_id']}/frames/{frame['frame_id']}?manifest={row['id']}",
             }
             for frame in row["frames"]

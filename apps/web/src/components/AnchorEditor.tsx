@@ -42,7 +42,7 @@ export function AnchorCard({
     const context = canvas.getContext("2d");
     if (!context) return;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.fillStyle = "#0b1220";
+    context.fillStyle = "#141414";
     context.fillRect(0, 0, cssWidth, cssHeight);
     const fit = containFit(frame.width, frame.height, cssWidth, cssHeight);
     context.drawImage(image, fit.offsetX, fit.offsetY, frame.width * fit.scale, frame.height * fit.scale);

@@ -23,6 +23,9 @@ import {
   startAnalysis,
   uploadClip,
 } from "@/lib/api";
+import { ClipWell } from "@/components/ClipWell";
+import { useWorking } from "@/components/Look";
+import { useScreenScope } from "@/components/Shell";
 import { nextAttention, summaryLine } from "@/lib/attention";
 
 const STAGE_LABEL: Record<string, string> = {
@@ -40,6 +43,7 @@ const STAGE_LABEL: Record<string, string> = {
 const TERMINAL = new Set(["succeeded", "failed", "interrupted", "cancelled"]);
 
 export function ReviewApp() {
+  useScreenScope("No submission open");
   const router = useRouter();
   const params = useSearchParams();
   const videoId = params.get("video");
@@ -62,6 +66,7 @@ export function ReviewApp() {
   const [attentionId, setAttentionId] = useState<string | null>(null);
   const [activeMs, setActiveMs] = useState<number | null>(null);
   const [busy, setBusy] = useState("");
+  useWorking(busy !== "" || uploadProgress != null);
 
   useEffect(() => {
     getReady().then((ready) => setProvider(ready.provider)).catch(() => setProvider(null));
@@ -123,7 +128,7 @@ export function ReviewApp() {
     try {
       const created = await uploadClip(file, rights, (fraction) => setUploadProgress(fraction));
       setUploadProgress(null);
-      router.replace(`/?video=${created.id}`);
+      router.replace(`/workbench?video=${created.id}`);
     } catch (error) {
       setUploadProgress(null);
       setMessage(error instanceof Error ? error.message : "The upload failed.");
@@ -245,13 +250,15 @@ export function ReviewApp() {
   const synthetic = provider?.mode === "synthetic" || analysis?.provenance.provider_label === "synthetic";
 
   return (
-    <main className="app">
-      <header>
-        <h1>SecondLook</h1>
-        <p>Candidate observations stay tied to the clip. They are unreviewed suggestions, not ratings or odds.</p>
-        <p className="meta">
-          Single-clip workbench. Coaches review submissions in the <Link href="/review">review inbox</Link>.
-        </p>
+    <main className="screen">
+      <header className="title-row">
+        <div>
+          <h1>Workbench</h1>
+          <p className="sub">Candidate observations stay tied to the clip. They are unreviewed suggestions, not ratings or odds.</p>
+          <p className="meta">
+            Single-clip workbench. Coaches review submissions in the <Link href="/review">review inbox</Link>.
+          </p>
+        </div>
       </header>
       {synthetic && (
         <div className="banner" role="status">
@@ -262,14 +269,11 @@ export function ReviewApp() {
       {message && <p className="error">{message}</p>}
 
       {!video && (
-        <section className="panel upload">
-          <h2>Upload a clip</h2>
-          <p className="note">MP4 or MOV, up to 200 MB and 90 seconds.</p>
-          <div className="row">
-            <label>
-              Rights note
-              <input value={rights} onChange={(event) => setRights(event.target.value)} type="text" />
-            </label>
+        <div className="split workbench-start">
+          <label className="stage-well drop">
+            <ClipWell at={uploadProgress ?? undefined} />
+            <span className="drop-title">Upload a clip</span>
+            <span className="meta">MP4 or MOV, up to 200 MB and 90 seconds.</span>
             <input
               aria-label="Upload clip"
               type="file"
@@ -279,11 +283,17 @@ export function ReviewApp() {
                 if (file) void onUpload(file);
               }}
             />
+          </label>
+          <div className="side-form">
+            <label>
+              Rights note
+              <input value={rights} onChange={(event) => setRights(event.target.value)} type="text" />
+            </label>
+            {uploadProgress !== null && (
+              <p className="meta">{uploadProgress < 1 ? `Uploading ${Math.round(uploadProgress * 100)}%` : "Preparing a playable copy…"}</p>
+            )}
           </div>
-          {uploadProgress !== null && (
-            <p>{uploadProgress < 1 ? `Uploading ${Math.round(uploadProgress * 100)}%` : "Preparing a playable copy…"}</p>
-          )}
-        </section>
+        </div>
       )}
 
       {video && (

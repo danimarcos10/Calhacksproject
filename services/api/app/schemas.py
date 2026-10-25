@@ -1,7 +1,8 @@
+import re
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Box(BaseModel):
@@ -16,6 +17,74 @@ class Box(BaseModel):
         if self.x + self.w > 1.001 or self.y + self.h > 1.001:
             raise ValueError("box extends outside the frame")
         return self
+
+
+class ScoutStartIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    t_ms: int = Field(ge=0)
+    box: Box
+    player_name: str = Field(min_length=1, max_length=80)
+
+
+class MarkIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    t_ms: int = Field(ge=0)
+    box: Box
+
+
+class ScoutClipIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    video_id: str
+    t_ms: int = Field(ge=0)
+    box: Box
+    marks: list[MarkIn] = Field(default_factory=list, max_length=24)
+
+
+class ScoutBatchIn(BaseModel):
+    """One player, several clips. Each clip is clicked on the picture."""
+
+    model_config = ConfigDict(extra="forbid")
+    player_name: str = Field(min_length=1, max_length=80)
+    clips: list[ScoutClipIn] = Field(min_length=1, max_length=6)
+
+    @model_validator(mode="after")
+    def one_row_per_clip(self) -> "ScoutBatchIn":
+        ids = [clip.video_id for clip in self.clips]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Each clip can be included once.")
+        return self
+
+
+class FindPlayerIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    description: str = Field(min_length=3, max_length=200)
+
+
+class FindPlayerOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    found: bool
+    t_ms: int = 0
+    track_id: int | None = None
+    box: Box | None = None
+    message: str
+
+
+class StickIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    t_ms: int = Field(ge=0)
+    box: Box
+
+
+class StickFrame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    t: int
+    box: Box
+
+
+class StickOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    frames: list[StickFrame]
+    message: str
 
 
 class AnchorIn(BaseModel):
@@ -139,6 +208,51 @@ class ProviderEvidence(BaseModel):
     no_observation_reason: str | None = Field(default=None, max_length=400)
 
 
+class ScoutAction(str, Enum):
+    receive = "receive"
+    pass_ = "pass"
+    carry = "carry"
+    loss = "loss"
+    other = "other"
+
+
+class ScoutOutcome(str, Enum):
+    completed = "completed"
+    intercepted = "intercepted"
+    out_of_play = "out_of_play"
+    controlled = "controlled"
+    miscontrolled = "miscontrolled"
+    retained = "retained"
+    lost = "lost"
+    unclear = "unclear"
+
+
+class ScoutEventIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    candidate_id: str
+    action: ScoutAction
+    outcome: ScoutOutcome
+    start_ms: int
+    end_ms: int
+    frame_ids: list[str] = Field(min_length=1, max_length=8)
+    visible_action: str = Field(min_length=1, max_length=400)
+    evidence_status: EvidenceStatus
+    identity_status: IdentityStatus
+    limitations: list[str] = Field(default_factory=list, max_length=6)
+    direction: str | None = Field(default=None, max_length=40)
+    length: str | None = Field(default=None, max_length=40)
+    touches: int | None = None
+    under_pressure: bool | None = None
+
+
+class ScoutReport(BaseModel):
+    """Schema for one batch of candidate involvements. No scores and no rankings."""
+
+    model_config = ConfigDict(extra="forbid")
+    schema_version: str
+    events: list[ScoutEventIn] = Field(default_factory=list, max_length=12)
+
+
 class FrameOut(BaseModel):
     frame_id: str
     source_t_ms: int
@@ -172,6 +286,12 @@ class RevisionOut(BaseModel):
     created_at: str
 
 
+class TrackingOut(BaseModel):
+    state: str
+    done: int = 0
+    total: int = 0
+
+
 class VideoOut(BaseModel):
     id: str
     duration_ms: int
@@ -184,6 +304,7 @@ class VideoOut(BaseModel):
     rights_note: str
     manifests: list[ManifestOut]
     revisions: list[RevisionOut]
+    tracking: TrackingOut | None = None
 
 
 class ObservationOut(BaseModel):
@@ -307,3 +428,221 @@ class ReadyOut(BaseModel):
 
 class HealthOut(BaseModel):
     status: str
+
+
+STATES = (
+    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut",
+    "Delaware", "District of Columbia", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois",
+    "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts",
+    "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
+    "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota",
+    "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
+    "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin",
+    "Wyoming",
+)
+League = Literal["mls_next", "ecnl", "ecnl_rl", "npl", "usys", "high_school", "club"]
+EMAIL_ADDRESS = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+
+
+def _state(value: str) -> str:
+    cleaned = " ".join(value.split())
+    if cleaned not in STATES:
+        raise ValueError("Choose a US state.")
+    return cleaned
+
+
+def _email(value: str) -> str:
+    cleaned = value.strip()
+    if not EMAIL_ADDRESS.fullmatch(cleaned):
+        raise ValueError("Enter an email address.")
+    return cleaned
+
+
+class ClipStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tracked_s: float = Field(ge=0, le=2000)
+    receives: int = Field(ge=0, le=200)
+    passes_completed: int = Field(ge=0, le=200)
+    passes_attempted: int = Field(ge=0, le=200)
+    carries: int = Field(ge=0, le=200)
+    losses: int = Field(ge=0, le=200)
+    reviewed: bool
+    clips: int = Field(default=1, ge=1, le=6)
+    confidence: int = Field(default=0, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def passes_fit(self) -> "ClipStats":
+        if self.passes_completed > self.passes_attempted:
+            raise ValueError("Completed passes cannot exceed attempted passes.")
+        return self
+
+
+class ProgramsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    state: str
+    league: League
+
+    @field_validator("state")
+    @classmethod
+    def known_state(cls, value: str) -> str:
+        return _state(value)
+
+
+class ProgramOut(BaseModel):
+    school: str
+    short_name: str
+    city: str
+    state: str
+    conference: str
+    division: Literal["d1", "d2"]
+    fit: Literal["fit", "possible", "reach"]
+    fit_reason: str
+
+
+class ProgramsOut(BaseModel):
+    programs: list[ProgramOut]
+    divisions: list[Literal["d1", "d2"]]
+    rule: str
+    note: str
+    run_ids: list[str]
+    actors: list[str]
+    cache_status: Literal["live", "cached"]
+    retrieved_at: str
+    message: str | None = None
+
+
+class OpportunityIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    player_name: str = Field(default="", max_length=80)
+    player_email: str = Field(max_length=120)
+    position: str = Field(min_length=1, max_length=40)
+    grad_year: int = Field(ge=2024, le=2035)
+    state: str
+    league: League
+    clip_url: str = Field(default="", max_length=300)
+    schools: list[str] = Field(min_length=1, max_length=5)
+    stats: ClipStats
+    profile: str = Field(default="", max_length=600)
+
+    @field_validator("state")
+    @classmethod
+    def known_state(cls, value: str) -> str:
+        return _state(value)
+
+    @field_validator("player_email")
+    @classmethod
+    def email_shape(cls, value: str) -> str:
+        return _email(value)
+
+    @field_validator("clip_url")
+    @classmethod
+    def clip_link(cls, value: str) -> str:
+        cleaned = value.strip()
+        if cleaned and not cleaned.startswith("https://"):
+            raise ValueError("The clip link has to start with https://.")
+        return cleaned
+
+    @field_validator("schools")
+    @classmethod
+    def unique_schools(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            name = " ".join(item.split())
+            if not name or name in seen:
+                continue
+            if len(name) > 160:
+                raise ValueError("A school name is too long.")
+            seen.add(name)
+            cleaned.append(name)
+        if not cleaned:
+            raise ValueError("Choose a school.")
+        return cleaned
+
+
+class CoachCardOut(BaseModel):
+    school: str
+    division: Literal["d1", "d2"]
+    conference: str
+    coach_name: str | None
+    title: str | None
+    email: str | None
+    phone: str | None
+    url: str | None
+    subject: str
+    draft: str
+
+
+class OpportunityOut(BaseModel):
+    result_id: str
+    review_id: str
+    player_email: str
+    cards: list[CoachCardOut]
+    summary: str
+    stats_table: str
+    rule: str
+    run_ids: list[str]
+    actors: list[str]
+    cache_status: Literal["live", "cached"]
+    retrieved_at: str
+    message: str | None = None
+
+
+class SendIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    result_id: str = Field(pattern=r"^out_[0-9a-f]{16}$")
+    email: str = Field(max_length=120)
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=8000)
+    reply_to: str = Field(max_length=120)
+
+    @field_validator("email", "reply_to")
+    @classmethod
+    def email_shape(cls, value: str) -> str:
+        return _email(value)
+
+
+class SendOut(BaseModel):
+    sent_to: str
+    test_mode: bool
+    message: str
+
+
+class ReachIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    position: str = Field(min_length=1, max_length=40)
+    grad_year: int = Field(ge=2024, le=2035)
+    state: str
+    league: League
+    school: str = Field(min_length=1, max_length=160)
+    stats: ClipStats
+    profile: str = Field(default="", max_length=600)
+
+    @field_validator("state")
+    @classmethod
+    def known_state(cls, value: str) -> str:
+        return _state(value)
+
+    @field_validator("school")
+    @classmethod
+    def school_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Choose a school.")
+        return cleaned
+
+
+class ReachStepOut(BaseModel):
+    title: str
+    detail: str
+    cost: Literal["free", "low cost"]
+
+
+class ReachOut(BaseModel):
+    school: str
+    division: Literal["d1", "d2"]
+    conference: str
+    reason: str
+    read: str
+    steps: list[ReachStepOut]
+    source: Literal["claude", "standard"]

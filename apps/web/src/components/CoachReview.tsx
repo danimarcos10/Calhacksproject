@@ -11,6 +11,12 @@ import { categoryLabel } from "../../convex/lib/summary";
 import { API_ORIGIN, formatMs } from "@/lib/api";
 import { CONTEXT_PAD_MS, STATUS_LABEL, buildPlaylist, playlistCount, playlistMs, type PlaylistMode, type Segment } from "@/lib/moments";
 import { codeFor, errorText, forgetCode, rememberCode, reviewerName, setReviewerName } from "@/lib/reviewAccess";
+import { Bar, DecisionBar } from "@/components/Charts";
+import { ClipWell } from "@/components/ClipWell";
+import { decisionCounts, share } from "@/lib/visual";
+import { useCue, useWorking } from "@/components/Look";
+import { ScoutBoard } from "@/components/ScoutBoard";
+import { useScreenScope } from "@/components/Shell";
 
 type Review = FunctionReturnType<typeof api.review.get>;
 type Moment = Review["moments"][number];
@@ -26,6 +32,7 @@ export function CoachReview({ submissionKey }: { submissionKey: string }) {
   const params = useSearchParams();
   const [code, setCode] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  useWorking(!ready);
 
   useEffect(() => {
     const fromUrl = params.get("code");
@@ -37,7 +44,19 @@ export function CoachReview({ submissionKey }: { submissionKey: string }) {
     setReady(true);
   }, [params, router, submissionKey]);
 
-  if (!ready) return <main className="app"><p className="meta">Opening the submission…</p></main>;
+  if (!ready) return (
+    <main className="screen">
+      <header className="title-row">
+        <div>
+          <h1>SecondLook review</h1>
+          <p className="sub">Opening this submission.</p>
+        </div>
+      </header>
+      <div className="sheet sheet-empty">
+        <ClipWell />
+      </div>
+    </main>
+  );
   if (!code) {
     return (
       <CodeGate
@@ -64,10 +83,12 @@ export function CoachReview({ submissionKey }: { submissionKey: string }) {
 function CodeGate({ onCode, message }: { onCode: (code: string) => void; message?: string }) {
   const [value, setValue] = useState("");
   return (
-    <main className="app">
-      <header>
+    <main className="screen">
+      <header className="title-row">
+        <div>
         <h1>SecondLook review</h1>
-        <p>Each submission opens with its own review code.</p>
+        <p className="sub">Each submission opens with its own review code.</p>
+        </div>
       </header>
       <section className="panel upload">
         {message && <p className="error">{message}</p>}
@@ -98,7 +119,7 @@ class AccessBoundary extends Component<{ children: ReactNode; onReset: () => voi
   render() {
     if (this.state.error) {
       return (
-        <main className="app">
+        <main className="screen">
           <section className="panel upload">
             <p className="error">{errorText(this.state.error, "The review could not be loaded. Check that Convex is running.")}</p>
             <button type="button" onClick={this.props.onReset}>Enter a different code</button>
@@ -113,16 +134,32 @@ class AccessBoundary extends Component<{ children: ReactNode; onReset: () => voi
 function ReviewBody({ submissionKey, code }: { submissionKey: string; code: string }) {
   const review = useQuery(api.review.get, { key: submissionKey, code });
   const [reviewer, setReviewer] = useState("Coach");
+  useScreenScope(review?.submission.player ?? "No submission open");
   useEffect(() => setReviewer(reviewerName()), []);
 
-  if (review === undefined) return <main className="app"><p className="meta">Loading the review…</p></main>;
+  if (review === undefined) {
+    return (
+      <main className="screen">
+        <div className="skeleton skel-title" />
+        <div className="skeleton skel-line" />
+        <div className="skeleton skel-block" />
+      </main>
+    );
+  }
+  const scout = review.windows.some((item) => item.kind === "scout");
+  if (scout) {
+    return (
+      <main className="screen">
+        <ScoutBoard review={review} access={{ key: submissionKey, code }} reviewer={reviewer} />
+      </main>
+    );
+  }
   return (
-    <main className="app review">
+    <main className="screen review">
       <header className="review-head">
         <div>
-          <p className="meta"><Link href="/review">Review inbox</Link></p>
           <h1>{review.submission.player}</h1>
-          <p>{review.submission.title}</p>
+          <p className="sub">{review.submission.title}</p>
           <p className="meta">Rights: {review.submission.rightsNote}</p>
         </div>
         <label className="reviewer">
@@ -342,12 +379,15 @@ function MomentCard({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
+  const cue = useCue();
+  useWorking(saving !== "");
 
   async function send(action: "accept" | "reject" | "reset") {
     setSaving(action === "accept" ? "Saving accept…" : action === "reject" ? "Saving reject…" : "Saving undo…");
     setError("");
     try {
       await decide({ ...access, observationId: moment.id as Id<"observations">, action, reason: action === "reject" ? reason : undefined, reviewer });
+      if (action === "accept") cue("nod");
       setRejecting(false);
       setReason("");
     } catch (caught) {
@@ -383,7 +423,7 @@ function MomentCard({
       <div className="actions">
         <button type="button" onClick={onPlay}>Play</button>
         {live && moment.status === "suggestion" && (
-          <button type="button" className="primary" disabled={Boolean(saving)} onClick={() => void send("accept")}>Accept</button>
+          <button type="button" disabled={Boolean(saving)} onClick={() => void send("accept")}>Accept</button>
         )}
         {live && moment.status !== "rejected" && (
           <button type="button" disabled={Boolean(saving)} onClick={() => setRejecting((value) => !value)}>Reject</button>
@@ -426,6 +466,7 @@ function SummaryPanel({ review, access, reviewer, onOpen }: { review: Review; ac
     <div className="summary">
       <h2>Summary</h2>
       <p className="meta">Built from saved decisions with a fixed template. No extra model call.</p>
+      <DecisionBar counts={decisionCounts(review.moments)} />
       <h3>Accepted</h3>
       {summary.accepted.length === 0 && <p className="meta">Nothing accepted yet.</p>}
       {summary.accepted.map((group) => (
@@ -481,6 +522,7 @@ function SummaryPanel({ review, access, reviewer, onOpen }: { review: Review; ac
         Analysed footage: <strong>{(summary.analysedMs / 1000).toFixed(1)} s</strong> · Moments shortlist:{" "}
         <strong>{(summary.shortlistMs / 1000).toFixed(1)} s</strong>
       </p>
+      <Bar value={share(summary.shortlistMs, summary.analysedMs)} />
       <p className="meta">Coverage, not time saved. The shortlist is the exact evidence time of current moments, before playback context.</p>
       <PrepPanel review={review} />
     </div>
@@ -647,6 +689,7 @@ function WindowRow({ window: w, review, onQueue, access }: { window: ReviewWindo
     if (latest.status === "failed") status = `Failed: ${latest.errorMessage ?? latest.errorCode}`;
   }
   const busy = latest && latest.revisionNumber === w.currentRevision && (latest.status === "queued" || latest.status === "running");
+  useWorking(Boolean(busy));
   return (
     <div className="window-row" data-window={w.order}>
       <p>

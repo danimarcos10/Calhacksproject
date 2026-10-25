@@ -4,6 +4,8 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { cleanReviewer, openSubmission, sha256Hex } from "./lib/access";
 import { currentRuns, decisionBlocked, momentStatus, silentRelabels, type DecisionAction } from "./lib/status";
+import { evidenceConfidence } from "./lib/confidence";
+import { buildScoutBrief } from "./lib/scoutBrief";
 import { buildSummary } from "./lib/summary";
 import { anchor } from "./schema";
 
@@ -44,6 +46,45 @@ function prepEffort(window: Doc<"windows">, revisions: Doc<"revisions">[], curre
   };
 }
 
+const LIVE_STATUS = new Set(["suggestion", "accepted", "held"]);
+
+function profileAbility(ability: Doc<"profiles">["ability"], blocked: boolean, confidenceScore: number) {
+  if (!ability || ability.dimensions.length < 2) {
+    return { state: "withheld" as const, reason: "Not enough cited actions to estimate ability." };
+  }
+  if (blocked) return { state: "withheld" as const, reason: "A cited moment was rejected or is out of date." };
+  if (confidenceScore < 40) {
+    return { state: "withheld" as const, reason: "Evidence confidence is below 40, so this estimate stays hidden." };
+  }
+  return { state: "shown" as const, overall: ability.overall, dimensions: ability.dimensions };
+}
+
+function presentProfile(
+  stored: Doc<"profiles"> | null,
+  moments: { id: string; status: string }[],
+  confidenceScore: number,
+) {
+  if (!stored) return null;
+  const byId = new Map(moments.map((moment) => [moment.id, moment.status]));
+  const live = (ids: string[]) => ids.every((id) => LIVE_STATUS.has(byId.get(id) ?? ""));
+  const qualities = stored.qualities.filter((quality) => quality.eventIds.length > 0 && live(quality.eventIds));
+  const cited = stored.ability?.dimensions.flatMap((dimension) => dimension.eventIds) ?? [];
+  const blocked = cited.some((id) => {
+    const status = byId.get(id);
+    return status === undefined || status === "rejected" || status === "stale";
+  });
+  const ability = profileAbility(stored.ability, blocked, confidenceScore);
+  return {
+    summary: stored.summary,
+    qualities,
+    gaps: stored.gaps,
+    ability,
+    model: stored.model,
+    cacheStatus: stored.cacheStatus,
+    costUsd: stored.costUsd,
+  };
+}
+
 async function loadReview(ctx: QueryCtx, submission: Doc<"submissions">) {
   const player = await ctx.db.get(submission.playerId);
   const windows = (await windowsOf(ctx, submission._id)).sort((a, b) => a.order - b.order);
@@ -80,6 +121,7 @@ async function loadReview(ctx: QueryCtx, submission: Doc<"submissions">) {
       const status = momentStatus(currentRunIds.has(obs.runId), obs.attributionHold, latest?.action as DecisionAction | undefined);
       return {
         id: obs._id,
+        key: obs.key,
         runId: obs.runId,
         runKey: runById.get(obs.runId)?.key ?? "",
         windowId: obs.windowId,
@@ -93,6 +135,8 @@ async function loadReview(ctx: QueryCtx, submission: Doc<"submissions">) {
         frameIds: obs.frameIds,
         visibleAction: obs.visibleAction,
         outcome: obs.outcome,
+        action: obs.action ?? null,
+        outcomeDetail: obs.outcomeDetail ?? null,
         evidenceStatus: obs.evidenceStatus,
         identityStatus: obs.identityStatus,
         limitations: obs.limitations,
@@ -127,6 +171,7 @@ async function loadReview(ctx: QueryCtx, submission: Doc<"submissions">) {
       startMs: window.startMs,
       endMs: window.endMs,
       frames: window.frames,
+      kind: window.kind ?? "window",
       link: window.link,
       currentRevision: window.currentRevision,
       revision: revision
@@ -151,6 +196,8 @@ async function loadReview(ctx: QueryCtx, submission: Doc<"submissions">) {
         errorCode: r.errorCode ?? null,
         errorMessage: r.errorMessage ?? null,
         retryable: r.retryable ?? null,
+        progress: r.progress ?? null,
+        cancelRequested: r.cancelRequested ?? false,
         requestedBy: r.requestedBy,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
@@ -199,6 +246,56 @@ async function loadReview(ctx: QueryCtx, submission: Doc<"submissions">) {
     })),
   );
 
+  const corrections = [];
+  for (const window of windows) {
+    const rows = await ctx.db
+      .query("correctionRequests")
+      .withIndex("by_window", (q) => q.eq("windowId", window._id))
+      .order("desc")
+      .take(3);
+    for (const row of rows) {
+      if (row.revisionNumber !== window.currentRevision) continue;
+      corrections.push({
+        id: row._id,
+        windowId: row.windowId,
+        tMs: row.tMs,
+        frameId: row.frameId,
+        reason: row.reason,
+        boxes: row.boxes,
+      });
+    }
+  }
+  const confidence = evidenceConfidence(
+    windows.map((window) => {
+      const runId = current.get(window._id);
+      const run = runId ? runById.get(runId) : undefined;
+      return { order: window.order, trackedMs: run?.trackedMs ?? 0 };
+    }),
+    moments.map((moment) => ({
+      windowOrder: moment.windowOrder,
+      status: moment.status,
+      outcome: moment.outcomeDetail ?? moment.outcome,
+      attributionHold: moment.status === "held",
+    })),
+  );
+  const storedProfile = await ctx.db
+    .query("profiles")
+    .withIndex("by_submission", (q) => q.eq("submissionId", submission._id))
+    .order("desc")
+    .first();
+
+  const brief = buildScoutBrief(
+    moments
+      .filter((moment) => moment.action && (moment.status === "suggestion" || moment.status === "accepted" || moment.status === "held"))
+      .map((moment) => ({
+        id: moment.id,
+        action: moment.action ?? "",
+        outcome: moment.outcomeDetail ?? moment.outcome,
+        startMs: moment.startMs,
+        visibleAction: moment.visibleAction,
+      })),
+  );
+
   return {
     submission: {
       key: submission.key,
@@ -220,6 +317,10 @@ async function loadReview(ctx: QueryCtx, submission: Doc<"submissions">) {
         cacheStatus: r.cacheStatus,
         model: r.model,
         providerLabel: r.providerLabel,
+        state: r.state ?? "succeeded",
+        coverageNote: r.coverageNote ?? null,
+        narrative: r.narrative ?? null,
+        trackedMs: r.trackedMs ?? null,
         costUsd: r.costUsd,
         inputTokens: r.inputTokens,
         outputTokens: r.outputTokens,
@@ -227,6 +328,10 @@ async function loadReview(ctx: QueryCtx, submission: Doc<"submissions">) {
         observationCount: observations.filter((o) => o.runId === r._id).length,
         publishedAt: r.publishedAt,
       })),
+    brief,
+    confidence,
+    profile: presentProfile(storedProfile, moments, confidence.score),
+    corrections,
     note: note ? { body: note.body, reviewer: note.reviewer, at: note.createdAt } : null,
     footageRequest: footage ? { body: footage.body, reviewer: footage.reviewer, at: footage.createdAt } : null,
     summary,
@@ -417,6 +522,26 @@ export const saveRevision = mutation({
   },
 });
 
+export const cancelAnalysis = mutation({
+  args: { ...access, windowId: v.id("windows") },
+  handler: async (ctx, args) => {
+    const submission = await openSubmission(ctx, args.key, args.code);
+    const window = await ctx.db.get(args.windowId);
+    if (!window || window.submissionId !== submission._id) {
+      throw new ConvexError({ code: "not_found", message: "That window is not part of this submission." });
+    }
+    const running = await ctx.db
+      .query("analysisRequests")
+      .withIndex("by_window", (q) => q.eq("windowId", window._id))
+      .order("desc")
+      .take(5);
+    const current = running.find((item) => item.status === "running" || item.status === "queued");
+    if (!current) return false;
+    await ctx.db.patch(current._id, { cancelRequested: true, updatedAt: Date.now() });
+    return true;
+  },
+});
+
 export const queueAnalysis = mutation({
   args: { ...access, windowId: v.id("windows"), reviewer: v.string() },
   handler: async (ctx, args) => {
@@ -470,6 +595,7 @@ async function enqueue(ctx: MutationCtx, window: Doc<"windows">, reviewer: strin
     requestedBy: reviewer,
     createdAt: now,
     updatedAt: now,
+    ...(window.kind ? { kind: window.kind } : {}),
   });
   return { status: "queued" as const, requestId };
 }

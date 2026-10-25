@@ -134,6 +134,40 @@ CREATE TABLE IF NOT EXISTS budget_entries (
   output_tokens INTEGER,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS model_attempts (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  batch_key TEXT NOT NULL,
+  state TEXT NOT NULL,
+  reservation_id TEXT,
+  fingerprint TEXT NOT NULL,
+  response_json TEXT,
+  tries INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(job_id, batch_key)
+);
+CREATE TABLE IF NOT EXISTS scout_cache (
+  fingerprint TEXT PRIMARY KEY,
+  response_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS opportunity_cache (
+  fingerprint TEXT PRIMARY KEY,
+  response_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS outreach_sends (
+  id TEXT PRIMARY KEY,
+  review_id TEXT NOT NULL,
+  result_id TEXT NOT NULL,
+  coach_email TEXT NOT NULL,
+  delivered_to TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  test_mode INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(review_id, coach_email)
+);
 """
 
 
@@ -185,6 +219,7 @@ class Database:
                 raise
 
     def mark_interrupted(self) -> None:
+        now = utcnow()
         self.execute(
             """
             UPDATE jobs
@@ -194,8 +229,13 @@ class Database:
             """,
             (
                 "Analysis stopped because the server restarted. The upload and target are still here; retry the analysis.",
-                utcnow(),
+                now,
             ),
+        )
+        # A call that left the machine may already have been billed. Never resend it.
+        self.execute(
+            "UPDATE model_attempts SET state='unknown', updated_at=? WHERE state='sent'",
+            (now,),
         )
 
     def insert_video(self, row: dict[str, Any]) -> None:
@@ -670,6 +710,91 @@ class Database:
               SELECT reservation_id FROM budget_entries WHERE kind IN ('reconcile', 'release')
             )
             """
+        )
+        return float(row["n"]) if row else 0.0
+
+    def get_attempt(self, job_id: str, batch_key: str) -> dict[str, Any] | None:
+        return self.query_one(
+            "SELECT * FROM model_attempts WHERE job_id=? AND batch_key=?",
+            (job_id, batch_key),
+        )
+
+    def upsert_attempt(self, **fields: Any) -> None:
+        current = self.get_attempt(fields["job_id"], fields["batch_key"])
+        now = utcnow()
+        if current is None:
+            self.execute(
+                """
+                INSERT INTO model_attempts (
+                  id, job_id, batch_key, state, reservation_id, fingerprint, response_json, tries, created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    new_id("att"),
+                    fields["job_id"],
+                    fields["batch_key"],
+                    fields["state"],
+                    fields.get("reservation_id"),
+                    fields["fingerprint"],
+                    fields.get("response_json"),
+                    fields.get("tries", 0),
+                    now,
+                    now,
+                ),
+            )
+            return
+        self.execute(
+            """
+            UPDATE model_attempts
+            SET state=?, reservation_id=?, fingerprint=?, response_json=?, tries=?, updated_at=?
+            WHERE id=?
+            """,
+            (
+                fields["state"],
+                fields.get("reservation_id", current["reservation_id"]),
+                fields["fingerprint"],
+                fields.get("response_json", current["response_json"]),
+                fields.get("tries", current["tries"]),
+                now,
+                current["id"],
+            ),
+        )
+
+    def get_scout_cache(self, fingerprint: str) -> str | None:
+        row = self.query_one("SELECT response_json FROM scout_cache WHERE fingerprint=?", (fingerprint,))
+        return row["response_json"] if row else None
+
+    def put_scout_cache(self, fingerprint: str, response_json: str) -> None:
+        self.execute(
+            """
+            INSERT INTO scout_cache (fingerprint, response_json, created_at) VALUES (?,?,?)
+            ON CONFLICT(fingerprint) DO UPDATE SET response_json=excluded.response_json
+            """,
+            (fingerprint, response_json, utcnow()),
+        )
+
+    def get_opportunity_cache(self, fingerprint: str) -> str | None:
+        row = self.query_one("SELECT response_json FROM opportunity_cache WHERE fingerprint=?", (fingerprint,))
+        return row["response_json"] if row else None
+
+    def put_opportunity_cache(self, fingerprint: str, response_json: str) -> None:
+        self.execute(
+            """
+            INSERT INTO opportunity_cache (fingerprint, response_json, created_at) VALUES (?,?,?)
+            ON CONFLICT(fingerprint) DO UPDATE SET response_json=excluded.response_json
+            """,
+            (fingerprint, response_json, utcnow()),
+        )
+
+    def job_open_reserve_usd(self, job_id: str) -> float:
+        row = self.query_one(
+            """
+            SELECT COALESCE(SUM(amount_usd), 0) AS n FROM budget_entries
+            WHERE job_id=? AND kind='reserve' AND reservation_id NOT IN (
+              SELECT reservation_id FROM budget_entries WHERE kind IN ('reconcile', 'release')
+            )
+            """,
+            (job_id,),
         )
         return float(row["n"]) if row else 0.0
 

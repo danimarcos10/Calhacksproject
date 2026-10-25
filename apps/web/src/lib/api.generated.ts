@@ -72,6 +72,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/videos/{video_id}/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** People */
+        get: operations["people_api_videos__video_id__people_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/videos/{video_id}/scout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Scout */
+        post: operations["start_scout_api_videos__video_id__scout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Scout Batch */
+        post: operations["start_scout_batch_api_scout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/{review_id}/programs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Programs */
+        post: operations["programs_api_reviews__review_id__programs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/{review_id}/opportunities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Opportunities */
+        post: operations["opportunities_api_reviews__review_id__opportunities_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/{review_id}/outreach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Outreach */
+        post: operations["outreach_api_reviews__review_id__outreach_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/videos/{video_id}/media": {
         parameters: {
             query?: never;
@@ -81,6 +183,23 @@ export interface paths {
         };
         /** Media */
         get: operations["media_api_videos__video_id__media_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/videos/{video_id}/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tracks */
+        get: operations["tracks_api_videos__video_id__tracks_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -134,6 +253,23 @@ export interface paths {
         put?: never;
         /** Targets */
         post: operations["targets_api_videos__video_id__targets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/videos/{video_id}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Proposals */
+        post: operations["proposals_api_videos__video_id__proposals_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -271,6 +407,59 @@ export interface components {
             /** H */
             h: number;
         };
+        /** ClipStats */
+        ClipStats: {
+            /** Tracked S */
+            tracked_s: number;
+            /** Receives */
+            receives: number;
+            /** Passes Completed */
+            passes_completed: number;
+            /** Passes Attempted */
+            passes_attempted: number;
+            /** Carries */
+            carries: number;
+            /** Losses */
+            losses: number;
+            /** Reviewed */
+            reviewed: boolean;
+            /**
+             * Clips
+             * @default 1
+             */
+            clips: number;
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
+        };
+        /** CoachCardOut */
+        CoachCardOut: {
+            /** School */
+            school: string;
+            /**
+             * Division
+             * @enum {string}
+             */
+            division: "d1" | "d2";
+            /** Conference */
+            conference: string;
+            /** Coach Name */
+            coach_name: string | null;
+            /** Title */
+            title: string | null;
+            /** Email */
+            email: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Url */
+            url: string | null;
+            /** Subject */
+            subject: string;
+            /** Draft */
+            draft: string;
+        };
         /** ContinuityIssue */
         ContinuityIssue: {
             /** Frame Id */
@@ -402,6 +591,134 @@ export interface components {
             /** Hold Frame Id */
             hold_frame_id?: string | null;
         };
+        /** OpportunityIn */
+        OpportunityIn: {
+            /**
+             * Player Name
+             * @default
+             */
+            player_name: string;
+            /** Player Email */
+            player_email: string;
+            /** Position */
+            position: string;
+            /** Grad Year */
+            grad_year: number;
+            /** State */
+            state: string;
+            /**
+             * League
+             * @enum {string}
+             */
+            league: "mls_next" | "ecnl" | "ecnl_rl" | "npl" | "usys" | "high_school" | "club";
+            /**
+             * Clip Url
+             * @default
+             */
+            clip_url: string;
+            /** Schools */
+            schools: string[];
+            stats: components["schemas"]["ClipStats"];
+            /**
+             * Profile
+             * @default
+             */
+            profile: string;
+        };
+        /** OpportunityOut */
+        OpportunityOut: {
+            /** Result Id */
+            result_id: string;
+            /** Review Id */
+            review_id: string;
+            /** Player Email */
+            player_email: string;
+            /** Cards */
+            cards: components["schemas"]["CoachCardOut"][];
+            /** Summary */
+            summary: string;
+            /** Stats Table */
+            stats_table: string;
+            /** Rule */
+            rule: string;
+            /** Run Ids */
+            run_ids: string[];
+            /** Actors */
+            actors: string[];
+            /**
+             * Cache Status
+             * @enum {string}
+             */
+            cache_status: "live" | "cached";
+            /** Retrieved At */
+            retrieved_at: string;
+            /** Message */
+            message?: string | null;
+        };
+        /** ProgramOut */
+        ProgramOut: {
+            /** School */
+            school: string;
+            /** Short Name */
+            short_name: string;
+            /** City */
+            city: string;
+            /** State */
+            state: string;
+            /** Conference */
+            conference: string;
+            /**
+             * Division
+             * @enum {string}
+             */
+            division: "d1" | "d2";
+        };
+        /** ProgramsIn */
+        ProgramsIn: {
+            /** State */
+            state: string;
+            /**
+             * League
+             * @enum {string}
+             */
+            league: "mls_next" | "ecnl" | "ecnl_rl" | "npl" | "usys" | "high_school" | "club";
+        };
+        /** ProgramsOut */
+        ProgramsOut: {
+            /** Programs */
+            programs: components["schemas"]["ProgramOut"][];
+            /** Divisions */
+            divisions: ("d1" | "d2")[];
+            /** Rule */
+            rule: string;
+            /** Note */
+            note: string;
+            /** Run Ids */
+            run_ids: string[];
+            /** Actors */
+            actors: string[];
+            /**
+             * Cache Status
+             * @enum {string}
+             */
+            cache_status: "live" | "cached";
+            /** Retrieved At */
+            retrieved_at: string;
+            /** Message */
+            message?: string | null;
+        };
+        /** ProposalOut */
+        ProposalOut: {
+            /** Anchors */
+            anchors: components["schemas"]["AnchorIn"][];
+        };
+        /** ProposalRequest */
+        ProposalRequest: {
+            /** Manifest Id */
+            manifest_id: string;
+            /** Anchors */
+            anchors: components["schemas"]["AnchorIn"][];
+        };
         /** ProvenanceOut */
         ProvenanceOut: {
             /** Model Requested */
@@ -498,6 +815,54 @@ export interface components {
             /** End Ms */
             end_ms: number;
         };
+        /**
+         * ScoutBatchIn
+         * @description One player, several clips. Each clip is clicked once.
+         */
+        ScoutBatchIn: {
+            /** Player Name */
+            player_name: string;
+            /** Clips */
+            clips: components["schemas"]["ScoutClipIn"][];
+        };
+        /** ScoutClipIn */
+        ScoutClipIn: {
+            /** Video Id */
+            video_id: string;
+            /** T Ms */
+            t_ms: number;
+            box: components["schemas"]["Box"];
+        };
+        /** ScoutStartIn */
+        ScoutStartIn: {
+            /** T Ms */
+            t_ms: number;
+            box: components["schemas"]["Box"];
+            /** Player Name */
+            player_name: string;
+        };
+        /** SendIn */
+        SendIn: {
+            /** Result Id */
+            result_id: string;
+            /** Email */
+            email: string;
+            /** Subject */
+            subject: string;
+            /** Body */
+            body: string;
+            /** Reply To */
+            reply_to: string;
+        };
+        /** SendOut */
+        SendOut: {
+            /** Sent To */
+            sent_to: string;
+            /** Test Mode */
+            test_mode: boolean;
+            /** Message */
+            message: string;
+        };
         /** StageOut */
         StageOut: {
             /** Stage */
@@ -531,6 +896,21 @@ export interface components {
             note: string;
             /** Anchors */
             anchors: components["schemas"]["AnchorIn"][];
+        };
+        /** TrackingOut */
+        TrackingOut: {
+            /** State */
+            state: string;
+            /**
+             * Done
+             * @default 0
+             */
+            done: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
         };
         /** UsageOut */
         UsageOut: {
@@ -576,6 +956,7 @@ export interface components {
             manifests: components["schemas"]["ManifestOut"][];
             /** Revisions */
             revisions: components["schemas"]["RevisionOut"][];
+            tracking?: components["schemas"]["TrackingOut"] | null;
         };
         /** WindowOut */
         WindowOut: {
@@ -697,7 +1078,244 @@ export interface operations {
             };
         };
     };
+    people_api_videos__video_id__people_get: {
+        parameters: {
+            query: {
+                t: number;
+            };
+            header?: never;
+            path: {
+                video_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_scout_api_videos__video_id__scout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScoutStartIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_scout_batch_api_scout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScoutBatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    programs_api_reviews__review_id__programs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProgramsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgramsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    opportunities_api_reviews__review_id__opportunities_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpportunityIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    outreach_api_reviews__review_id__outreach_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     media_api_videos__video_id__media_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tracks_api_videos__video_id__tracks_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -819,6 +1437,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevisionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    proposals_api_videos__video_id__proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalOut"];
                 };
             };
             /** @description Validation Error */
