@@ -1,0 +1,3 @@
+PROMPT_VERSION = "evidence-v1"
+SCHEMA_VERSION = "1.0"
+SAMPLER_VERSION = "sampler-v1"

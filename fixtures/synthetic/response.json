@@ -1,0 +1,16 @@
+{
+  "label": "synthetic-fixture",
+  "not_football_analysis": true,
+  "schema_version": "1.0",
+  "observations": [
+    {
+      "category": "carrying_action",
+      "visible_action": "SYNTHETIC FIXTURE: a coloured box changes position. This is not football analysis.",
+      "outcome": "not_observable",
+      "evidence_status": "ambiguous",
+      "identity_status": "uncertain",
+      "limitations": ["Synthetic fixture. No player was observed."]
+    }
+  ],
+  "gaps": ["Synthetic fixture: nothing here is evidence about a player."]
+}

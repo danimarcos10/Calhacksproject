@@ -1,0 +1,15 @@
+{
+  "note": "Template only; no footage included.",
+  "videos": [
+    {
+      "local_filename": "",
+      "source": "",
+      "permission_and_permitted_use": "",
+      "recorded_by": "",
+      "adult_or_required_permission_confirmed": false,
+      "can_send_frames_to_provider": false,
+      "can_show_at_demo": false,
+      "can_publish": false
+    }
+  ]
+}

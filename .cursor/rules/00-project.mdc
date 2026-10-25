@@ -1,0 +1,5 @@
+---
+description: SecondLook scope and context entry point
+alwaysApply: true
+---
+Read AGENTS.md, HACK.md and docs/STATE.md before starting or resuming work. Read only the technical document needed for the current task. Keep evidence linked to validated source intervals, preserve uncertainty, and invalidate dependent claims after corrections. Build M0 first. Update STATE.md with verified behavior and the next task. The full PDF is optional reference, not always-on context.
