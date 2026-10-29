@@ -35,10 +35,9 @@ Deployment constraint: a single-machine SQLite architecture requires durable loc
 ## Proposed project layout
 ```text
 secondlook/
-  AGENTS.md                 # small invariant + document index
-  HACK.md                   # scope, deadline, tracks, honesty
+  AGENTS.md                 # short invariants
   .cursor/rules/00-project.mdc
-  .agents/skills/hack-*/     # six original mentor skills
+  skills/                   # one folder per skill; open only when needed
   .env.example
   apps/web/                 # Next.js application
   services/api/app/
@@ -54,20 +53,17 @@ secondlook/
     tracking/sam2.py        # optional; disabled
   tests/                    # focused contract/integration tests
   fixtures/                 # synthetic cases + rights manifest
-  docs/                     # split build specification + state
+  docs/                     # product spec + state
   data/                     # ignored videos, frames, SQLite
-  third_party/calhacks-kit/ # license + provenance
 ```
 
 Pydantic is the contract source. Generate or derive TypeScript API types from OpenAPI after the routes stabilize; do not maintain two independently invented definitions. Model-generated IDs are not trusted database keys: the server assigns persistent observation IDs after validation.
 
 ## Context rules
-The always-applied Cursor rule should be a short pointer, not the entire plan. At a new session, read AGENTS.md, HACK.md and STATE.md. Then read the one relevant technical document. Keep large videos, frames, node_modules, virtual environments and generated PDFs outside indexing. An ignore file is a context/noise control, not a security boundary for secrets.
+AGENTS.md is the only always-on project brief. Read one file in docs/ for the task in front of you. Do not preload the set. Keep videos, frames, node_modules, and virtual environments outside indexing. An ignore file is a noise control, not a security boundary for secrets.
 
-## Mentor skill installation
-The kit includes exact files from George Kalangi's calhacks-kit commit 209a9095e6dc0771596dabdf77cc604d0959a70e under .agents/skills. Cursor documents that directory as a supported project skill location. Restart the agent session if discovery is stale; a fallback is to explicitly ask it to read the named SKILL.md. [S07, S08]
-
-Do not rerun a whole brainstorming interview: HACK.md already answers the scope questions as working assumptions. Use hack-scope to refine, hack-stack to check the risky integration, and hack-check at milestones. Use ship and pitch later; showtime is optional. The bundled event preset was checked October 16 and contains TBA/older-event examples; current event sources in docs/08_SPONSORS_AND_COSTS.md override it.
+## Skills
+Skills are folders under skills/. Each SKILL.md has a one-line description and is read only when that description matches the task. Do not copy them into .agents/skills or .claude/skills.
 
 ---
 

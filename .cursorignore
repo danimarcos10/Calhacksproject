@@ -4,6 +4,9 @@ node_modules/
 __pycache__/
 data/
 checkpoints/
+.taste-skill/
+sources/
+*.mp4
 .env
 .env.*
 !.env.example

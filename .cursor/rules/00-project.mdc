@@ -1,5 +1,5 @@
 ---
-description: SecondLook scope and context entry point
-alwaysApply: true
+description: SecondLook evidence rules. Use when changing observations, reviews, video timestamps, or model output.
+alwaysApply: false
 ---
-Read AGENTS.md, HACK.md and docs/STATE.md before starting or resuming work. Read only the technical document needed for the current task. Keep evidence linked to validated source intervals, preserve uncertainty, and invalidate dependent claims after corrections. Build M0 first. Update STATE.md with verified behavior and the next task. The full PDF is optional reference, not always-on context.
+Validate source intervals. Ability estimates are unverified, cite events, and stay hidden below confidence 40. Never invent statistics or scholarship odds. Corrections invalidate dependent claims. No silent mock fallback.
