@@ -6,28 +6,29 @@ import sys
 import time
 from pathlib import Path
 
-from app.scout.roboflow import SAMPLE_FPS, BallTracker, FootballModels, iter_sampled
+from sports.common.ball import BallTracker
+
+from app.scout.roboflow import FootballModels, _ball_slicer, iter_frames
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def measure(path: Path, models: FootballModels, limit: int = 30) -> None:
     import supervision as sv
-    from trackers import ByteTrackTracker
 
-    tracker = ByteTrackTracker(frame_rate=SAMPLE_FPS, track_activation_threshold=0.25, minimum_consecutive_frames=1)
-    ball_tracker = BallTracker()
+    tracker = sv.ByteTrack(minimum_consecutive_frames=3)
+    ball_tracker = BallTracker(buffer_size=20)
+    slicer = _ball_slicer(models)
     players = []
     balls = 0
     started = time.perf_counter()
     used = 0
-    for _t, frame, _total in iter_sampled(path):
-        detections = models.detect_players(frame)
-        detections = tracker.update(detections)
+    for _index, _t, frame, _total, _native in iter_frames(path):
+        detections = tracker.update_with_detections(models.detect_players(frame))
         kind = detections.class_id
         count = 0 if kind is None else int(((kind == 1) | (kind == 2) | (kind == 3)).sum())
         players.append(count)
-        found = models.detect_ball(frame, ball_tracker)
+        found = ball_tracker.update(slicer(frame).with_nms(threshold=0.1))
         if len(found):
             balls += 1
         used += 1

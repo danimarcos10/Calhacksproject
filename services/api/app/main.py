@@ -428,6 +428,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         payload = gzip.compress(json.dumps(document).encode())
         return Response(content=payload, media_type="application/json", headers={"Content-Encoding": "gzip"})
 
+    @app.get("/api/videos/{video_id}/analysis")
+    def clip_analysis(video_id: str, request: Request):
+        _require_id(video_id, "vid")
+        video = request.app.state.db.get_video(video_id)
+        if video is None:
+            raise AppError("not_found", "That clip was not found.", 404)
+        from app.scout.roboflow import load_analysis
+
+        summary = load_analysis(settings.data_path, video["sha256"])
+        if summary is None:
+            raise AppError("not_found", "Player tracking has not finished for this clip.", 404)
+        return summary
+
     @app.post("/api/videos/{video_id}/samples", response_model=ManifestOut)
     async def samples(video_id: str, parsed: SampleRequest, request: Request):
         _require_id(video_id, "vid")

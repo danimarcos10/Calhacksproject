@@ -49,7 +49,6 @@ export function Shell({ children }: { children: ReactNode }) {
           <p className="scope">{scope}</p>
           <nav className="nav" aria-label="Screens">
             <NavLink href="/scout" current={pathname === "/scout"}>Scout</NavLink>
-            <NavLink href="/review" current={pathname.startsWith("/review") || pathname.startsWith("/prepare")}>Review</NavLink>
           </nav>
           <div className="sidebar-bottom">
             <p className="group-label">Builder</p>

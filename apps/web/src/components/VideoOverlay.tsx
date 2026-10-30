@@ -2,13 +2,16 @@
 
 import { useEffect, useRef } from "react";
 
-export type TrackPlayer = { id: number; cls: number; team: number | null; box: number[] };
-export type TrackFrame = { t: number; players: TrackPlayer[]; ball: number[] | null };
+export type TrackPlayer = { id: number; cls: number; team: number | null; box: number[]; pitch?: number[] | null };
+export type TrackFrame = { t: number; players: TrackPlayer[]; ball: number[] | null; ball_pitch?: number[] | null };
 export type OverlayMoment = { startMs: number; endMs: number; action: string | null; outcome: string | null };
 export type OverlayLayers = { rings: boolean; marker: boolean; shadow: boolean; ball: boolean; moments: boolean };
 type Box = { x: number; y: number; w: number; h: number };
 type Ghost = { wall: number; x: number; y: number; rx: number; ry: number };
 
+const TEAM_COLOR = ["#FF1493", "#00BFFF"];
+const PITCH_LENGTH = 12000;
+const PITCH_WIDTH = 7000;
 const RING = "rgba(255, 255, 255, 0.55)";
 const CHOSEN = "#1d5fbf";
 const HATCH = "rgba(255, 255, 255, 0.8)";
@@ -61,8 +64,12 @@ export function VideoOverlay({
       }
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      const picture = pictureRect(video);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
+      ctx.setTransform(dpr, 0, 0, dpr, picture.x * dpr, picture.y * dpr);
+      const viewW = picture.w;
+      const viewH = picture.h;
       const now = performance.now();
       const tMs = video.currentTime * 1000;
       const jumped = Math.abs(tMs - clock.current.video - (now - clock.current.wall) * video.playbackRate * (video.paused ? 0 : 1)) > 250;
@@ -77,19 +84,19 @@ export function VideoOverlay({
 
       for (const player of sample.players) {
         const [x, y, w, h] = player.box;
-        const cx = (x + w / 2) * width;
-        const feet = (player.id === 0 ? y + h / 2 : y + h) * height;
-        if (player.id === selectedId) {
-          const rx = Math.max(12, w * width * 0.75);
-          chosen = { cx, feet, top: y * height, rx, ry: Math.max(5, rx * 0.32) };
-          continue;
+        const cx = (x + w / 2) * viewW;
+        const feet = (player.id === 0 ? y + h / 2 : y + h) * viewH;
+        if (show.rings) {
+          ctx.beginPath();
+          ctx.ellipse(cx, feet, Math.max(8, (w * viewW) / 2), Math.max(3, w * viewW * 0.18), 0, 0, Math.PI * 2);
+          ctx.strokeStyle = playerColor(player);
+          ctx.lineWidth = player.id === selectedId ? 3 : 2;
+          ctx.stroke();
         }
-        if (!show.rings) continue;
-        ctx.beginPath();
-        ctx.ellipse(cx, feet, Math.max(8, (w * width) / 2), Math.max(3, w * width * 0.16), 0, 0, Math.PI * 2);
-        ctx.strokeStyle = RING;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        if (player.id === selectedId) {
+          const rx = Math.max(12, w * viewW * 0.75);
+          chosen = { cx, feet, top: y * viewH, rx, ry: Math.max(5, rx * 0.32) };
+        }
       }
 
       if (chosen && show.shadow && !still.matches) {
@@ -101,17 +108,17 @@ export function VideoOverlay({
         ghosts.current = [];
       }
 
-      if (chosen && show.marker) drawMarker(ctx, chosen, height);
+      if (chosen && show.marker) drawMarker(ctx, chosen, viewH);
 
       if (show.ball && show.moments) {
         const pass = moments.find((moment) => moment.action === "pass" && tMs >= moment.startMs && tMs <= moment.startMs + PASS_MS);
-        if (pass) drawPass(ctx, frames, pass.startMs, tMs, width, height);
+        if (pass) drawPass(ctx, frames, pass.startMs, tMs, viewW, viewH);
       }
 
       if (show.ball && sample.ball) {
         const [x, y, w, h] = sample.ball;
-        const cx = (x + w / 2) * width;
-        const cy = (y + h / 2) * height;
+        const cx = (x + w / 2) * viewW;
+        const cy = (y + h / 2) * viewH;
         if (!still.matches) {
           const lastBall = trail.current[trail.current.length - 1];
           if (!lastBall || tMs - lastBall.t > 80) trail.current.push({ t: tMs, x: cx, y: cy });
@@ -129,10 +136,16 @@ export function VideoOverlay({
         ctx.fill();
       }
 
-      if (chosen && show.marker) {
-        const live = show.moments ? moments.find((moment) => tMs >= moment.startMs && tMs <= moment.endMs) : undefined;
-        const text = live ? chipText(live) : selectedId && selectedId > 0 ? `#${selectedId}` : "";
-        if (text) drawChip(ctx, text, chosen.cx, chosen.top - 10, width);
+      if (chosen && show.marker && show.moments) {
+        const live = moments.find((moment) => tMs >= moment.startMs && tMs <= moment.endMs);
+        if (live) drawChip(ctx, chipText(live), chosen.cx, chosen.top - 10, viewW);
+      }
+      if (show.rings) {
+        for (const player of sample.players) {
+          if (player.id <= 0) continue;
+          const [x, y, w] = player.box;
+          drawNumber(ctx, String(player.id), (x + w / 2) * viewW, y * viewH, viewW, playerColor(player));
+        }
       }
     };
     frame = requestAnimationFrame(draw);
@@ -144,9 +157,10 @@ export function VideoOverlay({
     if (!video || !onPick) return;
     const onClick = (event: MouseEvent) => {
       const rect = video.getBoundingClientRect();
-      const x = (event.clientX - rect.left) / rect.width;
-      const y = (event.clientY - rect.top) / rect.height;
-      if (y > 0.9) return;
+      const picture = pictureRect(video);
+      const x = (event.clientX - rect.left - picture.x) / picture.w;
+      const y = (event.clientY - rect.top - picture.y) / picture.h;
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
       event.preventDefault();
       event.stopPropagation();
       const sample = frames.length ? sampleAt(frames, video.currentTime * 1000) : null;
@@ -363,7 +377,12 @@ export function sampleAt(frames: TrackFrame[], tMs: number): TrackFrame | null {
   const players = prev.players.flatMap((player) => {
     const other = next.players.find((item) => item.id === player.id);
     if (!other) return alpha < 0.5 ? [player] : [];
-    return [{ ...player, box: player.box.map((value, index) => value + (other.box[index] - value) * alpha) }];
+    return [{
+      ...player,
+      team: alpha < 0.5 ? player.team : other.team,
+      box: player.box.map((value, index) => value + (other.box[index] - value) * alpha),
+      pitch: lerpPair(player.pitch, other.pitch, alpha),
+    }];
   });
   for (const player of next.players) {
     if (!players.some((item) => item.id === player.id) && alpha >= 0.5) players.push(player);
@@ -371,5 +390,162 @@ export function sampleAt(frames: TrackFrame[], tMs: number): TrackFrame | null {
   let ball: number[] | null = null;
   if (prev.ball && next.ball) ball = prev.ball.map((value, index) => value + (next.ball![index] - value) * alpha);
   else ball = alpha < 0.5 ? prev.ball : next.ball;
-  return { t: tMs, players, ball };
+  return { t: tMs, players, ball, ball_pitch: lerpPair(prev.ball_pitch, next.ball_pitch, alpha) };
+}
+
+function lerpPair(left: number[] | null | undefined, right: number[] | null | undefined, alpha: number): number[] | null {
+  if (left && right && left.length >= 2 && right.length >= 2) {
+    return [left[0] + (right[0] - left[0]) * alpha, left[1] + (right[1] - left[1]) * alpha];
+  }
+  return (alpha < 0.5 ? left : right) ?? null;
+}
+
+function playerColor(player: TrackPlayer) {
+  if (player.cls === 3) return "#FFD700";
+  if (player.team === 0 || player.team === 1) return TEAM_COLOR[player.team];
+  return RING;
+}
+
+type MapRect = { x: number; y: number; w: number; h: number };
+
+export function PitchMap({
+  videoRef,
+  frames,
+  selectedId,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  frames: TrackFrame[];
+  selectedId: number | null;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    let frame = 0;
+    const draw = () => {
+      frame = requestAnimationFrame(draw);
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (!width || !height) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+      }
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const video = videoRef.current;
+      const sample = video && frames.length ? sampleAt(frames, video.currentTime * 1000) : null;
+      const pad = 8;
+      drawPitch(ctx, sample, { x: pad, y: pad, w: Math.max(1, width - pad * 2), h: Math.max(1, height - pad * 2) }, selectedId);
+    };
+    frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
+  }, [frames, selectedId, videoRef]);
+  return <canvas ref={canvasRef} className="pitch-map" aria-label="Pitch map" />;
+}
+
+function pictureRect(video: HTMLVideoElement) {
+  const width = video.clientWidth;
+  const height = video.clientHeight;
+  const frameWidth = video.videoWidth;
+  const frameHeight = video.videoHeight;
+  if (!frameWidth || !frameHeight || !width || !height) return { x: 0, y: 0, w: width, h: height };
+  const scale = Math.min(width / frameWidth, height / frameHeight);
+  const w = frameWidth * scale;
+  const h = frameHeight * scale;
+  return { x: (width - w) / 2, y: (height - h) / 2, w, h };
+}
+
+function pitchPoint(x: number, y: number, map: MapRect) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (x < 0 || y < 0 || x > PITCH_LENGTH || y > PITCH_WIDTH) return null;
+  return { x: map.x + (x / PITCH_LENGTH) * map.w, y: map.y + (y / PITCH_WIDTH) * map.h };
+}
+
+function drawNumber(ctx: CanvasRenderingContext2D, text: string, cx: number, top: number, width: number, fill: string) {
+  ctx.font = "600 12px Geist, system-ui, sans-serif";
+  const chipWidth = ctx.measureText(text).width + 10;
+  const x = Math.min(Math.max(2, cx - chipWidth / 2), width - chipWidth - 2);
+  const y = Math.max(2, top - 18);
+  ctx.beginPath();
+  ctx.roundRect(x, y, chipWidth, 16, 4);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + 5, y + 8);
+  ctx.textBaseline = "alphabetic";
+}
+
+function drawPitch(
+  ctx: CanvasRenderingContext2D,
+  sample: TrackFrame | null,
+  map: MapRect,
+  selectedId: number | null,
+) {
+  const ball = sample?.ball_pitch;
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(map.x, map.y, map.w, map.h, 8);
+  ctx.fillStyle = "rgba(34, 139, 34, 0.78)";
+  ctx.fill();
+  ctx.clip();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.lineWidth = 1.25;
+  const line = (x1: number, y1: number, x2: number, y2: number) => {
+    const from = pitchPoint(x1, y1, map);
+    const to = pitchPoint(x2, y2, map);
+    if (!from || !to) return;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  };
+  line(0, 0, PITCH_LENGTH, 0);
+  line(PITCH_LENGTH, 0, PITCH_LENGTH, PITCH_WIDTH);
+  line(PITCH_LENGTH, PITCH_WIDTH, 0, PITCH_WIDTH);
+  line(0, PITCH_WIDTH, 0, 0);
+  line(PITCH_LENGTH / 2, 0, PITCH_LENGTH / 2, PITCH_WIDTH);
+  const boxY0 = (PITCH_WIDTH - 4100) / 2;
+  const boxY1 = (PITCH_WIDTH + 4100) / 2;
+  line(0, boxY0, 2015, boxY0);
+  line(2015, boxY0, 2015, boxY1);
+  line(2015, boxY1, 0, boxY1);
+  line(PITCH_LENGTH, boxY0, PITCH_LENGTH - 2015, boxY0);
+  line(PITCH_LENGTH - 2015, boxY0, PITCH_LENGTH - 2015, boxY1);
+  line(PITCH_LENGTH - 2015, boxY1, PITCH_LENGTH, boxY1);
+  const centre = pitchPoint(PITCH_LENGTH / 2, PITCH_WIDTH / 2, map);
+  if (centre) {
+    ctx.beginPath();
+    ctx.arc(centre.x, centre.y, (915 / PITCH_LENGTH) * map.w, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  for (const player of sample?.players ?? []) {
+    if (!player.pitch || player.pitch.length < 2) continue;
+    const at = pitchPoint(player.pitch[0], player.pitch[1], map);
+    if (!at) continue;
+    const selected = player.id === selectedId;
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, selected ? 7 : 5, 0, Math.PI * 2);
+    ctx.fillStyle = playerColor(player);
+    ctx.fill();
+    ctx.strokeStyle = selected ? "#ffffff" : "rgba(0, 0, 0, 0.45)";
+    ctx.stroke();
+  }
+  if (ball && ball.length >= 2) {
+    const at = pitchPoint(ball[0], ball[1], map);
+    if (!at) {
+      ctx.restore();
+      return;
+    }
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.stroke();
+  }
+  ctx.restore();
 }

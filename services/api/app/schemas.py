@@ -290,6 +290,7 @@ class TrackingOut(BaseModel):
     state: str
     done: int = 0
     total: int = 0
+    phase: str | None = None
 
 
 class VideoOut(BaseModel):
